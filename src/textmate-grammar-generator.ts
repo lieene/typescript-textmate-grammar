@@ -3,14 +3,13 @@
 // Author: Lieene Guo                                                              //
 // MIT License, Copyright (c) 2019 Lieene@ShadeRealm                               //
 // Created Date: Thu Nov 7 2019                                                    //
-// Last Modified: Tue Nov 19 2019                                                  //
+// Last Modified: Thu Nov 21 2019                                                  //
 // Modified By: Lieene Guo                                                         //
 
 import * as L from "@lieene/ts-utility";
-import { Text } from "./text-file";
-import { Tree, Name } from "poly-tree";
-import { GrammarDef } from "./textmate-grammar-definition";
-import * as fs from "fs";
+import { Text } from "text-editing";
+import { Tree } from "poly-tree";
+import { TmGrammar } from "./textmate-grammar-definition";
 
 // export interface Scope
 // {
@@ -18,7 +17,7 @@ import * as fs from "fs";
 // }
 export interface Grammar
 {
-    readonly def: GrammarDef;
+    readonly def: TmGrammar;
     TokenizeSource(source: string): Tree.MorphTreeN<Grammar.Token>;
     TokenizeLines(line: string[], parent?: Tree.MorphNodeN<Grammar.Token>): Tree.MorphNodeN<Grammar.Token>;
     TokenizeLine(line: string, parent?: Tree.MorphNodeN<Grammar.Token>): Tree.MorphNodeN<Grammar.Token>;
@@ -40,7 +39,7 @@ export namespace Grammar
         readonly span: Text.Span;
     }
 
-    export function GenerateGrammar(grammarDef: GrammarDef): Grammar | undefined
+    export function GenerateGrammar(grammarDef: TmGrammar): Grammar | undefined
     {
         return;
     }

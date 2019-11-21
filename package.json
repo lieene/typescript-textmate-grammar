@@ -13,7 +13,9 @@
     "prepublishOnly": "npm test && npm run lint",
     "preversion": "npm run lint",
     "version": "npm run format && git add -A src",
-    "postversion": "git push && git push --tags"
+    "postversion": "git push && git push --tags",
+    "update": "npm i text-editing oniguruma-ext",
+    "fastpatch": "git add . && git commit && npm version patch"
   },
   "repository": {
     "type": "git",
@@ -45,5 +47,9 @@
   },
   "files": [
     "out/**/*"
-  ]
+  ],
+  "dependencies": {
+    "oniguruma-ext": "^1.1.8",
+    "text-editing": "^1.0.6"
+  }
 }

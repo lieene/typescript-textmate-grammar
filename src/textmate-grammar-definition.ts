@@ -3,30 +3,14 @@
 // Author: Lieene Guo                                                              //
 // MIT License, Copyright (c) 2019 Lieene@ShadeRealm                               //
 // Created Date: Fri Nov 8 2019                                                    //
-// Last Modified: Tue Nov 19 2019                                                  //
+// Last Modified: Thu Nov 21 2019                                                  //
 // Modified By: Lieene Guo                                                         //
 
 import * as fs from "fs";
 
-export function GrammarDef(path: fs.PathLike): GrammarDef | undefined
+export interface TmGrammar
 {
-    try
-    {
-        const src = fs.readFileSync(path);
-        let gd = JSON.parse(src.toString());
-        if (gd.scopeName !== undefined) { return gd; }
-        else { return undefined; }
-    }
-    catch (e)
-    {
-        console.warn(e.toString());
-        return undefined;
-    }
-}
-
-export interface GrammarDef
-{
-    scopeName: GrammarDef.Name;
+    scopeName: TmGrammar.Name;
     name?: string;
     fileTypes?: string[];
     foldingStartMarker?: string;
@@ -34,13 +18,84 @@ export interface GrammarDef
     firstLineMatch?: string;
     uuid?: string;
 
-    patterns: GrammarDef.Rule[];
-    repository?: { [key: string]: GrammarDef.Rule };
+    patterns: TmGrammar.Rule[];
+    repository?: { [key: string]: TmGrammar.Rule };
 }
-export namespace GrammarDef
+export namespace TmGrammar
 {
+    export function LoadRaw(src: string): TmGrammar | undefined
+    {
+        try
+        {
+            //const src = fs.readFileSync(path);
+            let gd = JSON.parse(src.toString());
+            if (gd.scopeName) { return gd; }
+            else { return; }
+        }
+        catch (e) { return; }
+
+    }
+    export function BuildTokenLiterials(tm: TmGrammar, outPath?: string): void
+    {
+        for(const name in findNameInGrammar(tm))
+        {
+
+        }
+    }
+
+    export function findNameInGrammar(tm: TmGrammar): IterableIterator<string>
+    {
+        let names: Set<string> = new Set<string>();
+        let [p, repo] = [tm.patterns, tm.repository];
+        findNameInPatterns(p, names);
+        if (repo) { for (const key in repo) { findNameInRule(repo[key], names); } }
+        return names.keys();
+    }
+
+    function findNameInPatterns(patterns: Rule[], names: Set<string>)
+    {
+        if (!patterns) { return; }
+        for (let i = 0, len = patterns.length; i < len; i++)
+        { findNameInRule(patterns[i], names); }
+    }
+
+    function findNameInRule(rule: Rule, names: Set<string>)
+    {
+        if (!rule) { return; }
+        let [n, cn, p, ...ms] =
+            [
+                (rule as any).name,
+                (rule as any).contentName,
+                (rule as any).patterns,
+                (rule as any).begin,
+                (rule as any).end, (rule as any).match
+            ];
+
+        if (n) { names.add(n); }
+        if (cn) { names.add(cn); }
+        findNameInPatterns(p, names);
+        for (let i = 0, len = ms.length; i < len; i++)
+        { findNameInCaptures(ms[i], names); }
+    }
+
+
+    function findNameInCaptures(cap: CapturesByID, names: Set<string>)
+    {
+        if (!cap) { return; }
+        for (const id in cap)
+        {
+            let cr = cap[id as CaptureID];
+            if (cr)
+            {
+                let [n, p] = [(cr as any).name, (cr as any).patterns];
+                if (n !== undefined) { names.add(n); }
+                findNameInPatterns(p, names);
+            }
+        }
+    }
+
+
     export type Rule = MatchRule | BeginEndRule | RefRule;
-    export type CapturesByID = { [index in CaptureID]?: CaptureRule; };
 
     interface PatternBase
     {
@@ -69,6 +124,8 @@ export namespace GrammarDef
     }
 
     interface RefRule { include: string; }
+
+    export type CapturesByID = { [index in CaptureID]?: CaptureRule; };
 
     export type CaptureRule = CaptureName | CaptureSub;
     interface CaptureName { name: Name; }
@@ -176,7 +233,7 @@ export namespace GrammarDef
 }
 
 // import * as jtm from "../../TestsSpace/JSON.tmLanguage.json";
-// import * as cstm from "../../TestsSpace/csharp.tmLanguage.json";
+// import * as cstm from "../__tests__/syntaxes/csharp.tmLanguage.json";
 // let a: GrammarDef = jtm;
 // let b: GrammarDef = cstm;
 // let x = b.patterns[0];
