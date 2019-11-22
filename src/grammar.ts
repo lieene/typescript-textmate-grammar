@@ -120,7 +120,6 @@ export namespace Grammar
     }
 }
 
-
 /** Set of grammar to parse different languages */
 export type GrammarRepo = Tree.MorphTreeS<Grammar & { readonly gScope: string }, RepoBuilder.RepoFunc>;
 export type GrammarNode = Tree.NodeType<GrammarRepo>;
