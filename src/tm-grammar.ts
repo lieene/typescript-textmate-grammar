@@ -5,19 +5,49 @@
 // Created Date: Fri Nov 8 2019                                                    //
 // Last Modified: Fri Nov 22 2019                                                  //
 // Modified By: Lieene Guo                                                         //
-import * as L from "@lieene/ts-utility";
+import { Grammar } from "./grammar";
+import TokenName = Grammar.TokenName;
+
 export interface TmGrammar
 {
-    readonly scopeName: TmGrammar.Name;
-    readonly name?: string;
-    readonly fileTypes?: ReadonlyArray<string>;
-    readonly foldingStartMarker?: string;
-    readonly foldingStopMarker?: string;
-    readonly firstLineMatch?: string;
-    readonly uuid?: string;
+    /** this should be a unique name for the grammar,following the convention of being a dot-separated name where each new (left-most) part specializes the name.
+     *  Normally it would be a two-part name where the first is either text or source and the second is the name of the language or document type.
+     *  But if you are specializing an existing type, you probably want to derive the name from the type you are specializing.
+     *  The advantage of deriving it from (in this case) text.html is that everything which works in the text.html scope
+     *  will also work in the text.html.«something» scope (but with a lower precedence than something specifically targeting text.html.«something»).*/
+    readonly scopeName: TmGrammar.TmName;
 
-    readonly patterns: ReadonlyArray<TmGrammar.Rule>;
-    readonly repository?: { readonly [key: string]: TmGrammar.Rule };
+    /** comment for this grammar */
+    readonly comment?: string;
+
+    /** this is an array of file type extensions that the grammar should (by default) be used with.*/
+    readonly fileTypes?: ReadonlyArray<string>;
+
+    /** these are regular expressions that lines (in the document) are matched against.
+     *  If a line matches one of the patterns (but not both), it becomes a folding marker */
+    readonly foldingStartMarker?: string;
+
+    /** these are regular expressions that lines (in the document) are matched against.
+     *  If a line matches one of the patterns (but not both), it becomes a folding marker */
+    readonly foldingStopMarker?: string;
+
+    /** a regular expression which is matched against the first line of the document (when it is first loaded).
+     *  If it matches, the grammar is used for the document (unless there is a user override). */
+    readonly firstLineMatch?: string;
+
+
+    /**this is an array with the actual rules used to parse the document. */
+    readonly patterns: ReadonlyArray<TmGrammar.TmRule>;
+
+    /** a dictionary (i.e. key/value pairs) of rules which can be included from other places in the grammar.
+     *  The key is the name of the rule and the value is the actual rule. */
+    readonly repository?: { readonly [key: string]: TmGrammar.TmRule };
+
+    /** A display name of the language that this grammar describes */
+    readonly name?: string;
+
+    // /** A uuid of the language that this grammar describes */
+    // readonly uuid?: string;
 }
 
 export namespace TmGrammar
@@ -38,11 +68,11 @@ export namespace TmGrammar
     export function BuildTokenLiterialType(tm: TmGrammar, typeName?: string): string
     {
         let out = `type ${typeName === undefined ? "TokenNames" : typeName} = `;
-        for (const name of GetTokenNameSet(tm)) { out += `'${name}' | `; }
+        for (const name of editTokenNameSet(tm)) { out += `'${name}' | `; }
         return out.slice(0, out.lastIndexOf(" | ")) + ";";
     }
 
-    export function GetTokenNameSet(tm: TmGrammar): Set<string>
+    export function editTokenNameSet(tm: TmGrammar): Set<string>
     {
         let names: Set<string> = new Set<string>();
         let [p, repo] = [tm.patterns, tm.repository];
@@ -51,14 +81,14 @@ export namespace TmGrammar
         return names;
     }
 
-    function findNameInPatterns(patterns: ReadonlyArray<Rule>, names: Set<string>)
+    function findNameInPatterns(patterns: ReadonlyArray<TmRule>, names: Set<string>)
     {
         if (!patterns) { return; }
         for (let i = 0, len = patterns.length; i < len; i++)
         { findNameInRule(patterns[i], names); }
     }
 
-    function findNameInRule(rule: Rule, names: Set<string>)
+    function findNameInRule(rule: TmRule, names: Set<string>)
     {
         if (!rule) { return; }
         let [n, cn, p, ...ms] =
@@ -77,12 +107,12 @@ export namespace TmGrammar
         { findNameInCaptures(ms[i], names); }
     }
 
-    function findNameInCaptures(cap: CapturesByID, names: Set<string>)
+    function findNameInCaptures(cap: TmCapturesByID, names: Set<string>)
     {
         if (!cap) { return; }
         for (const id in cap)
         {
-            let cr = cap[id as CaptureID];
+            let cr = cap[id as TmCaptureID];
             if (cr)
             {
                 let [n, p] = [(cr as any).name, (cr as any).patterns];
@@ -93,130 +123,219 @@ export namespace TmGrammar
     }
 
 
-    export type Rule = MatchRule | BeginEndRule | RefRule;
 
-    interface PatternBase
+
+    export type TmRule = TmMatchRule | TmBeginEndRule | TmRefRule;
+
+    interface TmRuleCommon
     {
+        /** comment for this specific rule */
         readonly comment?: string;
-        readonly disabled?: number;
-        readonly name?: Name;
-        readonly patterns?: ReadonlyArray<Rule>;
-        readonly while?: string;
+
+        // /** flag indicates if the rule is enabled or disabled*/
+        // readonly disabled?: number;
+
+        /** the scoped name which gets assigned to the portion matched.
+         *  for unnamed match parent name will be used for the segment of code
+         *  the name follows the convention of being a dot-separated name where each new (left-most) part specializes the name
+         *  and should generally be derived from one of the standard names. */
+        readonly name?: TmName;
+
+        /** array of the actual rules used to parse the document. */
+        readonly patterns?: ReadonlyArray<TmRule>;
+
+        // readonly while?: string;
     }
 
-    interface BeginEndRule extends PatternBase
+    interface TmBeginEndRule extends TmRuleCommon
     {
+        /** a regular expression pattern that starts a block
+         *  togather with end, allow matches which span several lines and must both be mutually exclusive with the match key.*/
         readonly begin: string;
-        readonly end?: string;
-        readonly beginCaptures?: CapturesByID;
-        readonly endCaptures?: CapturesByID;
-        readonly captures?: CapturesByID;
-        readonly contentName?: Name;
-        readonly applyEndPatternLast?: number;
+
+        /** a regular expression pattern that ends a block
+         *  togather with begin, allow matches which span several lines and must both be mutually exclusive with the match key.*/
+        readonly end: string;
+
+        /** key allow you to assign attributes to the captures of the begin patterns. */
+        readonly beginCaptures?: TmCapturesByID;
+
+        /** key allow you to assign attributes to the captures of the end patterns. */
+        readonly endCaptures?: TmCapturesByID;
+
+        /** a short-hand allow you to assign attributes to the captures of the begin and end patterns with same values. */
+        readonly captures?: TmCapturesByID;
+
+        /** this key is similar to the name key but only assigns the name to the text between what is matched by the begin/end patterns. */
+        readonly contentName?: TmName;
+
+        /** specific if end pattern should be applied before content match rules*/
+        readonly applyEndPatternLast?: boolean;
     }
 
-    interface MatchRule extends PatternBase
+    interface TmMatchRule extends TmRuleCommon
     {
-        readonly match?: string;
-        readonly captures?: CapturesByID;
+        /** a regular expression which is used to identify the portion of text to which the name should be assigned. */
+        readonly match: string;
+
+        /** keys allow you to assign attributes to the captures of the match */
+        readonly captures?: TmCapturesByID;
     }
 
-    interface RefRule { readonly include: string; }
+    interface TmRefRule
+    {
+        /** this allows you to reference a different language, recursively reference the grammar itself or a rule declared in this file’s repository. 
+         *  1.To reference another language, use the scope name of that language.
+         *  2.To reference the grammar itself, use $self.
+         *  3.To reference a rule from the current grammars repository, prefix the name with a pound sign (#).
+        */
+        readonly include: string;
+    }
 
-    export type CapturesByID = { readonly [index in CaptureID]?: CaptureRule; };
+    export type TmCapturesByID = { readonly [index in TmCaptureID]?: TmCaptureRule; };
 
-    export type CaptureRule = CaptureName | CaptureSub;
+    export type TmCaptureRule = TmCaptureName | TmCaptureSub;
 
-    interface CaptureName { readonly name: Name; }
-    interface CaptureSub { readonly patterns: Rule[]; }
+    interface TmCaptureName
+    {
+        /** the scoped name which gets assigned to the portion matched. 
+         *  for unnamed match parent name will be used for the segment of code
+         *  the name follows the convention of being a dot-separated name where each new (left-most) part specializes the name 
+         *  and should generally be derived from one of the standard names. */
+        readonly name: TmName;
+    }
+    interface TmCaptureSub
+    {
+        /** array of the actual rules used to parse the document. */
+        readonly patterns: TmRule[];
+    }
 
     //#region edit------------------------------------------------------------------------
     export interface TmGrammarEdit extends TmGrammar
     {
-        setLanguageName(lang: string): void;
+        setScopeName(name: TokenName): void;
         setGrammarName(name: string): void;
+
         setFileTypes(...types: string[]): void;
+        addFileType(...types: string[]): void;
+        removeFileType(...keys: (string | number)[]): void;
+
         setFirstLineMatch(match: string): void;
 
-        addRootPattern(...patterns: Rule[]): void;
-        removeRootPattern(...i: number[]): void;
-        getRootPattern(i: number): RuleEdit | undefined;
+        addRootRule(...patterns: TmRule[]): void;
+        removeRootRule(...i: number[]): void;
+        setRootRule(i: number, run: TmRule): void;
+        editRootRule(i: number): TmRuleEdit | undefined;
 
-        addRepositoryPattern(key: string, rule: Rule): void;
-        addRepositoryPattern(...patterns: [string, Rule][]): void;
-        removeRepositoryPattern(...keys: (string | number)[]): void;
-        getRepositoryPattern(key: string | number): RuleEdit | undefined;
+        addRepositoryRule(key: string, rule: TmRule): void;
+        addRepositoryRule(...patterns: [string, TmRule][]): void;
+        removeRepositoryRule(...keys: (string | number)[]): void;
+        setRepositoryRule(key: (string | number), rule: TmRule): void;
+        editRepositoryRule(key: string | number): TmRuleEdit | undefined;
     }
 
-    type RuleEdit = TmMatchRuleEdit | TmBeginEndRuleEdit | TmRefRuleEdit;
+    type TmRuleEdit = TmMatchRuleEdit | TmBeginEndRuleEdit | TmRefRuleEdit;
 
-    interface TmPatternBaseEdit extends PatternBase
+    interface TmPatternBaseEdit extends TmRuleCommon
     {
-        setScopeName(name: string | undefined): void;
+        setTokenName(name: TokenName | undefined): void;
         setCommnet(cmt: string | undefined): void;
         enable(): void;
         disable(): void;
-        addPattern(...patterns: Rule[]): void;
-        removePattern(...i: number[]): void;
-        getPattern(i: number): Rule | undefined;
+
+        addRule(...patterns: TmRule[]): void;
+        removeRule(...i: number[]): void;
+        setRule(i: number, rule: TmRule): void;
+        editRule(i: number): TmRuleEdit | undefined;
     }
 
-    export interface TmMatchRuleEdit extends TmPatternBaseEdit, MatchRule
+    export interface TmMatchRuleEdit extends TmPatternBaseEdit, TmMatchRule
     {
         setMatch(match: string): void;
-
-        removeCap(...i: number[]): void;
-        addCap(...cap: CaptureRule[]): void;
-        getCap(i: number): CapEdit;
+        removeCapture(...i: number[]): void;
+        addCapture(...cap: TmCaptureRule[]): void;
+        setCapture(i: number, cap: TmCaptureRule): void;
+        editCapture(i: number): TmCapEdit;
     }
 
-    export interface TmBeginEndRuleEdit extends BeginEndRule
+    export interface TmBeginEndRuleEdit extends TmPatternBaseEdit, TmBeginEndRule
     {
-        setContentScopeName(name: string | undefined): void;
+        setContentTokenName(name: TokenName | undefined): void;
 
         setBeginMatch(match: string): void;
 
-        removeBeginCap(...i: number[]): void;
-        addBeginCap(...cap: CaptureRule[]): void;
-        getBeginCap(i: number): CapEdit;
+        removeBeginCapture(...i: number[]): void;
+        addBeginCapture(...cap: TmCaptureRule[]): void;
+        setBeginCapture(i: number, cap: TmCaptureRule): void;
+        editBeginCapture(i: number): TmCapEdit;
 
         setEndMatch(match: string): void;
 
-        removeEndCap(...i: number[]): void;
-        addEndCapture(...cap: CaptureRule[]): void;
-        getEndCap(i: number): CapEdit;
+        removeEndCapture(...i: number[]): void;
+        addEndCapture(...cap: TmCaptureRule[]): void;
+        setEndCapture(i: number, cap: TmCaptureRule): void;
+        editEndCapture(i: number): TmCapEdit;
 
-        removeCap(...i: number[]): void;
-        addCap(...cap: CaptureRule[]): void;
-        getCap(i: number): CapEdit;
+        removeCapture(...i: number[]): void;
+        addCapture(...cap: TmCaptureRule[]): void;
+        setCapture(i: number, cap: TmCaptureRule): void;
+        editCapture(i: number): TmCapEdit;
 
         setApplyEndPatternLast(index: number | undefined): void;
     }
 
-    export interface TmRefRuleEdit extends RefRule
+    export interface TmRefRuleEdit extends TmRefRule
     {
-        setReference(name: string): void;
+        setReference(key: string): void;
     }
 
-    type CapEdit = TmCaptureEdit | TmCapturePatternsEdit;
+    type TmCapEdit = TmCaptureEdit | TmCapturePatternsEdit;
 
-    export interface TmCaptureEdit extends CaptureName
+    export interface TmCaptureEdit extends TmCaptureName
     {
-        setScopeName(name: string | undefined): void;
+        NameName(name: TokenName): void;
     }
 
-    export interface TmCapturePatternsEdit extends CaptureSub
+    export interface TmCapturePatternsEdit extends TmCaptureSub
     {
-        addPattern(...patterns: Rule[]): void;
-        removePattern(...i: number[]): void;
-        getPattern(i: number): Rule | undefined;
+        addRule(...patterns: TmRule[]): void;
+        removeRule(...i: number[]): void;
+        setRule(i: number, rule: TmRule): void;
+        editRule(i: number): TmRuleEdit | undefined;
     }
     //#endregion edit------------------------------------------------------------------------
 
-    export type Name = CommonNames | string;
+    export type TmName = TmCommonNames | string;
+
     //#region literials------------------------------------------------------------------------
-    export type CaptureID = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "10" | "11" | "12" | "13" | "14" | "15" | "16" | "17" | "18" | "19" | "20" | "21" | "22" | "23" | "24" | "25" | "26" | "27" | "28" | "29" | "30";
-    export type CommonNames =
+    export type TmCaptureID =
+        "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" |
+        "10" | "11" | "12" | "13" | "14" | "15" | "16" | "17" | "18" | "19" |
+        "20" | "21" | "22" | "23" | "24" | "25" | "26" | "27" | "28" | "29" |
+        "30" | "31" | "32" | "33" | "34" | "35" | "36" | "37" | "38" | "39" |
+        "40" | "41" | "42" | "43" | "44" | "45" | "46" | "47" | "48" | "49" |
+        "50" | "51" | "52" | "53" | "54" | "55" | "56" | "57" | "58" | "59" |
+        "60" | "61" | "62" | "63" | "64" | "65" | "66" | "67" | "68" | "69" |
+        "70" | "71" | "72" | "73" | "74" | "75" | "76" | "77" | "78" | "79" |
+        "80" | "81" | "82" | "83" | "84" | "85" | "86" | "87" | "88" | "89" |
+        "90" | "91" | "92" | "93" | "94" | "95" | "96" | "97" | "98" | "99" |
+        "100" | "101" | "102" | "103" | "104" | "105" | "106" | "107" | "108" | "109" |
+        "110" | "111" | "112" | "113" | "114" | "115" | "116" | "117" | "118" | "119" |
+        "120" | "121" | "122" | "123" | "124" | "125" | "126" | "127" | "128" | "129" |
+        "130" | "131" | "132" | "133" | "134" | "135" | "136" | "137" | "138" | "139" |
+        "140" | "141" | "142" | "143" | "144" | "145" | "146" | "147" | "148" | "149" |
+        "150" | "151" | "152" | "153" | "154" | "155" | "156" | "157" | "158" | "159" |
+        "160" | "161" | "162" | "163" | "164" | "165" | "166" | "167" | "168" | "169" |
+        "170" | "171" | "172" | "173" | "174" | "175" | "176" | "177" | "178" | "179" |
+        "180" | "181" | "182" | "183" | "184" | "185" | "186" | "187" | "188" | "189" |
+        "190" | "191" | "192" | "193" | "194" | "195" | "196" | "197" | "198" | "199" |
+        "200" | "201" | "202" | "203" | "204" | "205" | "206" | "207" | "208" | "209" |
+        "210" | "211" | "212" | "213" | "214" | "215" | "216" | "217" | "218" | "219" |
+        "220" | "221" | "222" | "223" | "224" | "225" | "226" | "227" | "228" | "229" |
+        "230" | "231" | "232" | "233" | "234" | "235" | "236" | "237" | "238" | "239" |
+        "240" | "241" | "242" | "243" | "244" | "245" | "246" | "247" | "248" | "249";
+
+    export type TmCommonNames =
         "comment" |
         "comment.block" |
         "comment.block.documentation" |
