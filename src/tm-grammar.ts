@@ -3,24 +3,23 @@
 // Author: Lieene Guo                                                              //
 // MIT License, Copyright (c) 2019 Lieene@ShadeRealm                               //
 // Created Date: Fri Nov 8 2019                                                    //
-// Last Modified: Thu Nov 21 2019                                                  //
+// Last Modified: Fri Nov 22 2019                                                  //
 // Modified By: Lieene Guo                                                         //
-
-import * as fs from "fs";
-
+import * as L from "@lieene/ts-utility";
 export interface TmGrammar
 {
-    scopeName: TmGrammar.Name;
-    name?: string;
-    fileTypes?: string[];
-    foldingStartMarker?: string;
-    foldingStopMarker?: string;
-    firstLineMatch?: string;
-    uuid?: string;
+    readonly scopeName: TmGrammar.Name;
+    readonly name?: string;
+    readonly fileTypes?: ReadonlyArray<string>;
+    readonly foldingStartMarker?: string;
+    readonly foldingStopMarker?: string;
+    readonly firstLineMatch?: string;
+    readonly uuid?: string;
 
-    patterns: TmGrammar.Rule[];
-    repository?: { [key: string]: TmGrammar.Rule };
+    readonly patterns: ReadonlyArray<TmGrammar.Rule>;
+    readonly repository?: { readonly [key: string]: TmGrammar.Rule };
 }
+
 export namespace TmGrammar
 {
     export function LoadRaw(src: string): TmGrammar | undefined
@@ -35,24 +34,24 @@ export namespace TmGrammar
         catch (e) { return; }
 
     }
-    export function BuildTokenLiterials(tm: TmGrammar, outPath?: string): void
-    {
-        for(const name in findNameInGrammar(tm))
-        {
 
-        }
+    export function BuildTokenLiterialType(tm: TmGrammar, typeName?: string): string
+    {
+        let out = `type ${typeName === undefined ? "TokenNames" : typeName} = `;
+        for (const name of GetTokenNameSet(tm)) { out += `'${name}' | `; }
+        return out.slice(0, out.lastIndexOf(" | ")) + ";";
     }
 
-    export function findNameInGrammar(tm: TmGrammar): IterableIterator<string>
+    export function GetTokenNameSet(tm: TmGrammar): Set<string>
     {
         let names: Set<string> = new Set<string>();
         let [p, repo] = [tm.patterns, tm.repository];
         findNameInPatterns(p, names);
         if (repo) { for (const key in repo) { findNameInRule(repo[key], names); } }
-        return names.keys();
+        return names;
     }
 
-    function findNameInPatterns(patterns: Rule[], names: Set<string>)
+    function findNameInPatterns(patterns: ReadonlyArray<Rule>, names: Set<string>)
     {
         if (!patterns) { return; }
         for (let i = 0, len = patterns.length; i < len; i++)
@@ -78,7 +77,6 @@ export namespace TmGrammar
         { findNameInCaptures(ms[i], names); }
     }
 
-
     function findNameInCaptures(cap: CapturesByID, names: Set<string>)
     {
         if (!cap) { return; }
@@ -99,41 +97,125 @@ export namespace TmGrammar
 
     interface PatternBase
     {
-        comment?: string;
-        disabled?: number;
-        name?: Name;
-        patterns?: Rule[];
-        while?: string;
+        readonly comment?: string;
+        readonly disabled?: number;
+        readonly name?: Name;
+        readonly patterns?: ReadonlyArray<Rule>;
+        readonly while?: string;
     }
 
     interface BeginEndRule extends PatternBase
     {
-        begin: string;
-        end?: string;
-        beginCaptures?: CapturesByID;
-        endCaptures?: CapturesByID;
-        captures?: CapturesByID;
-        contentName?: Name;
-        applyEndPatternLast?: number;
+        readonly begin: string;
+        readonly end?: string;
+        readonly beginCaptures?: CapturesByID;
+        readonly endCaptures?: CapturesByID;
+        readonly captures?: CapturesByID;
+        readonly contentName?: Name;
+        readonly applyEndPatternLast?: number;
     }
 
     interface MatchRule extends PatternBase
     {
-        match?: string;
-        captures?: CapturesByID;
+        readonly match?: string;
+        readonly captures?: CapturesByID;
     }
 
-    interface RefRule { include: string; }
+    interface RefRule { readonly include: string; }
 
-    export type CapturesByID = { [index in CaptureID]?: CaptureRule; };
+    export type CapturesByID = { readonly [index in CaptureID]?: CaptureRule; };
 
     export type CaptureRule = CaptureName | CaptureSub;
-    interface CaptureName { name: Name; }
-    interface CaptureSub { patterns: Rule[]; }
 
+    interface CaptureName { readonly name: Name; }
+    interface CaptureSub { readonly patterns: Rule[]; }
 
-    export type CaptureID = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "10" | "11" | "12" | "13" | "14" | "15" | "16" | "17" | "18" | "19" | "20" | "21" | "22" | "23" | "24" | "25" | "26" | "27" | "28" | "29" | "30";
+    //#region edit------------------------------------------------------------------------
+    export interface TmGrammarEdit extends TmGrammar
+    {
+        setLanguageName(lang: string): void;
+        setGrammarName(name: string): void;
+        setFileTypes(...types: string[]): void;
+        setFirstLineMatch(match: string): void;
+
+        addRootPattern(...patterns: Rule[]): void;
+        removeRootPattern(...i: number[]): void;
+        getRootPattern(i: number): RuleEdit | undefined;
+
+        addRepositoryPattern(key: string, rule: Rule): void;
+        addRepositoryPattern(...patterns: [string, Rule][]): void;
+        removeRepositoryPattern(...keys: (string | number)[]): void;
+        getRepositoryPattern(key: string | number): RuleEdit | undefined;
+    }
+
+    type RuleEdit = TmMatchRuleEdit | TmBeginEndRuleEdit | TmRefRuleEdit;
+
+    interface TmPatternBaseEdit extends PatternBase
+    {
+        setScopeName(name: string | undefined): void;
+        setCommnet(cmt: string | undefined): void;
+        enable(): void;
+        disable(): void;
+        addPattern(...patterns: Rule[]): void;
+        removePattern(...i: number[]): void;
+        getPattern(i: number): Rule | undefined;
+    }
+
+    export interface TmMatchRuleEdit extends TmPatternBaseEdit, MatchRule
+    {
+        setMatch(match: string): void;
+
+        removeCap(...i: number[]): void;
+        addCap(...cap: CaptureRule[]): void;
+        getCap(i: number): CapEdit;
+    }
+
+    export interface TmBeginEndRuleEdit extends BeginEndRule
+    {
+        setContentScopeName(name: string | undefined): void;
+
+        setBeginMatch(match: string): void;
+
+        removeBeginCap(...i: number[]): void;
+        addBeginCap(...cap: CaptureRule[]): void;
+        getBeginCap(i: number): CapEdit;
+
+        setEndMatch(match: string): void;
+
+        removeEndCap(...i: number[]): void;
+        addEndCapture(...cap: CaptureRule[]): void;
+        getEndCap(i: number): CapEdit;
+
+        removeCap(...i: number[]): void;
+        addCap(...cap: CaptureRule[]): void;
+        getCap(i: number): CapEdit;
+
+        setApplyEndPatternLast(index: number | undefined): void;
+    }
+
+    export interface TmRefRuleEdit extends RefRule
+    {
+        setReference(name: string): void;
+    }
+
+    type CapEdit = TmCaptureEdit | TmCapturePatternsEdit;
+
+    export interface TmCaptureEdit extends CaptureName
+    {
+        setScopeName(name: string | undefined): void;
+    }
+
+    export interface TmCapturePatternsEdit extends CaptureSub
+    {
+        addPattern(...patterns: Rule[]): void;
+        removePattern(...i: number[]): void;
+        getPattern(i: number): Rule | undefined;
+    }
+    //#endregion edit------------------------------------------------------------------------
+
     export type Name = CommonNames | string;
+    //#region literials------------------------------------------------------------------------
+    export type CaptureID = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "10" | "11" | "12" | "13" | "14" | "15" | "16" | "17" | "18" | "19" | "20" | "21" | "22" | "23" | "24" | "25" | "26" | "27" | "28" | "29" | "30";
     export type CommonNames =
         "comment" |
         "comment.block" |
@@ -230,11 +312,12 @@ export namespace TmGrammar
         "variable.name" |
         "variable.other" |
         "variable.parameter";
+    //#endregion literials------------------------------------------------------------------------
 }
 
-// import * as jtm from "../../TestsSpace/JSON.tmLanguage.json";
+// import * as jtm from "../__tests__/syntaxes/JSON.tmLanguage.json";
+// let a: TmGrammar = jtm;
 // import * as cstm from "../__tests__/syntaxes/csharp.tmLanguage.json";
-// let a: GrammarDef = jtm;
 // let b: GrammarDef = cstm;
 // let x = b.patterns[0];
 // let r = a.repository!.array;

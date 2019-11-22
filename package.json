@@ -7,14 +7,14 @@
   "scripts": {
     "test": "jest --config jestconfig.json",
     "build": "tsc",
-    "format": "prettier --write \"src/**/*.ts\" \"src/**/*.js\"",
+    "format": "prettier --write \"out/**/*.ts\" \"out/**/*.js\"",
     "lint": "tslint -p tsconfig.json",
     "prepare": "npm run build",
     "prepublishOnly": "npm test && npm run lint",
     "preversion": "npm run lint",
     "version": "npm run format && git add -A src",
     "postversion": "git push && git push --tags",
-    "update": "npm i text-editing oniguruma-ext",
+    "update": "npm i text-editing oniguruma-ext && npm run test",
     "fastpatch": "git add . && git commit && npm version patch"
   },
   "repository": {
@@ -49,7 +49,7 @@
     "out/**/*"
   ],
   "dependencies": {
-    "oniguruma-ext": "^1.1.8",
-    "text-editing": "^1.0.6"
+    "oniguruma-ext": "^1.1.10",
+    "text-editing": "^1.0.8"
   }
 }

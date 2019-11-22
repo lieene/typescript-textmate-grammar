@@ -1,6 +1,10 @@
-import { TmGrammar } from "../src/textmate-grammar-definition";
+import { TmGrammar } from "../src/tmgrammar";
+import * as fs from "fs";
 
 test("grammar test", () =>
 {
-    let a: number = undefined;
+    let grammarSrc=fs.readFileSync(__dirname + "/syntaxes/JSON.tmLanguage.json").toString();
+    let grammar=TmGrammar.LoadRaw(grammarSrc)!;
+    let tokenNameType= TmGrammar.BuildTokenLiterialType(grammar);
+    console.log(tokenNameType);
 });
