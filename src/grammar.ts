@@ -3,7 +3,7 @@
 // Author: Lieene Guo                                                              //
 // MIT License, Copyright (c) 2019 Lieene@ShadeRealm                               //
 // Created Date: Sat Nov 23 2019                                                   //
-// Last Modified: Sat Nov 23 2019                                                  //
+// Last Modified: Sun Nov 24 2019                                                  //
 // Modified By: Lieene Guo                                                         //
 
 
@@ -11,7 +11,7 @@ import * as L from "@lieene/ts-utility";
 import { Text } from "text-editing";
 import { Tree, Name } from "poly-tree";
 import { OnigScanner } from "oniguruma-ext";
-import { TmGrammar } from "./tm-grammar";
+import { Textmate as tm } from "./tm-grammar";
 import { type } from "os";
 import { promisify } from "util";
 
@@ -20,7 +20,7 @@ export class Grammar
     static IsGrammar<T>(obj: T | Grammar): obj is Grammar
     { return (obj as Grammar).tokenizeSource !== undefined; }
 
-    constructor(src: TmGrammar)
+    constructor(src: tm.RawGrammar)
     {
         let hasSource = this.abstract = src !== undefined;
         this.scopeName = hasSource ? new Grammar.TokenName(src.scopeName) : L.Uny;
@@ -44,7 +44,7 @@ export class Grammar
         this.ptns = from.patterns.map(p => p);
     }
 
-    readonly tmSource?: TmGrammar;
+    readonly tmSource?: tm.RawGrammar;
     readonly abstract: boolean;
 
     readonly displayName: string;

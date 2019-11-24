@@ -6,219 +6,250 @@
 // Last Modified: Sun Nov 24 2019                                                  //
 // Modified By: Lieene Guo                                                         //
 import { Grammar } from "./grammar";
-
+import * as L from "@lieene/ts-utility";
 import TokenName = Grammar.TokenName;
-export type OnigRegexSrc = string;
-export type TmScopeName = string;
-export type TmRefName = string;
-export type TmRule<TS extends TmScopeName, TO extends OnigRegexSrc> = TmRuleGroup<TS, TO> | TmMatch<TS, TO> | TmBeginEnd<TS, TO> | TmBeginWhile<TS, TO> | TmInclude;
-export interface TmRuleCommon<TS extends TmScopeName, TO extends OnigRegexSrc>
+
+export namespace Textmate
 {
-    /** comment for this rule */
-    readonly comment?: string;
-
-    /** the scoped name which gets assigned to the portion matched.
-     *  for unnamed match parent name will be used for the segment of code
-     *  the name follows the convention of being a dot-separated name where each new (left-most) part specializes the name
-     *  and should generally be derived from one of the standard names. */
-    readonly name?: TS;
-    /** a dictionary (i.e. key/value pairs) of rules which can be included from other places in the grammar.
-     *  The key is the name of the rule and the value is the actual rule. */
-    readonly repository?: { readonly [key: string]: TmRule<TS, TO> };
-
-    /** This is a convenient way to experiment or develop, leaving a rule in place while effectively commenting it out */
-    readonly disabled?: 1;
-}
-
-export interface TmRuleGroup<TS extends TmScopeName, TO extends OnigRegexSrc> extends TmRuleCommon<TS, TO>
-{
-    /** an array of Rules in this group. */
-    readonly patterns: ReadonlyArray<TmRule<TS, TO>>;
-}
-
-export interface TmMatch<TS extends TmScopeName, TO extends OnigRegexSrc> extends TmRuleCommon<TS, TO>
-{
-    /** a regular expression which is used to identify the portion of text to which the name should be assigned. */
-    readonly match: TO;
-
-    /** keys allow you to assign attributes to the captures of the match */
-    readonly captures?: { readonly [index in TmCaptureID]?: TmRule<TS, TO> | { readonly name: TS }; };
-
-    //patterns need to be in captures as there are nothing to match here
-    //readonly patterns: ReadonlyArray<TmRule>;
-}
-
-export interface TmBeginEnd<TS extends TmScopeName, TO extends OnigRegexSrc> extends TmRuleCommon<TS, TO>
-{
-    /** a regular expression pattern that starts a block
-     *  togather with end, allow matches which span several lines and must both be mutually exclusive with the match key.*/
-    readonly begin: TO;
-
-    /** a regular expression pattern that ends a block
-     *  togather with begin, allow matches which span several lines and must both be mutually exclusive with the match key.*/
-    readonly end: TO;
-
-    /** key allow you to assign attributes to the captures of the begin patterns. */
-    readonly beginCaptures?: { readonly [index in TmCaptureID]?: TmRule<TS, TO> | { readonly name: TS }; };
-
-    /** key allow you to assign attributes to the captures of the end patterns. */
-    readonly endCaptures?: { readonly [index in TmCaptureID]?: TmRule<TS, TO> | { readonly name: TS }; };
-
-    /** a short-hand allow you to assign attributes to the captures of the begin and end patterns with same values. */
-    readonly captures?: { readonly [index in TmCaptureID]?: TmRule<TS, TO> | { readonly name: TS }; };
-
-    /** this key is similar to the name key but only assigns the name to the text between what is matched by the begin/end patterns. */
-    readonly contentName?: TS;
-
-    /** array of the actual rules used to parse the document. */
-    readonly patterns?: ReadonlyArray<TmRule<TS, TO>>;
-
-    readonly applyEndPatternLast?: boolean;
-
-}
-
-export interface TmBeginWhile<TS extends TmScopeName, TO extends OnigRegexSrc> extends TmRuleCommon<TS, TO>
-{
-    /** a regular expression pattern that starts a block
-     *  togather with end, allow matches which span several lines and must both be mutually exclusive with the match key.*/
-    readonly begin: TO;
-
-    /** a regular expression pattern that ends a block
-     *  togather with begin, allow matches which span several lines and must both be mutually exclusive with the match key.*/
-    readonly while: TO;
-
-    /** a short-hand allow you to assign attributes to the captures of the begin and end patterns with same values. */
-    readonly captures?: { readonly [index in TmCaptureID]?: TmRule<TS, TO> | { readonly name: TS }; };
-
-    /** array of the actual rules used to parse the document. */
-    readonly patterns?: ReadonlyArray<TmRule<TS, TO>>;
-}
-
-export interface TmInclude
-{
-    /** this allows you to reference a different language, recursively reference the grammar itself or a rule declared in this file’s repository. 
-     *  1.To reference another language, use the scope name of that language.
-     *  2.To reference the grammar itself, use $self.
-     *  3.To reference a rule from the current grammars repository, prefix the name with a pound sign (#).
-    */
-    readonly include: TmRefName;
-}
-
-export interface TmGrammar<TS extends TmScopeName, TO extends OnigRegexSrc>
-{
-    /** this should be a unique name for the grammar,following the convention of being a dot-separated name where each new (left-most) part specializes the name.
-     *  Normally it would be a two-part name where the first is either text or source and the second is the name of the language or document type.
-     *  But if you are specializing an existing type, you probably want to derive the name from the type you are specializing.
-     *  The advantage of deriving it from (in this case) text.html is that everything which works in the text.html scope
-     *  will also work in the text.html.«something» scope (but with a lower precedence than something specifically targeting text.html.«something»).*/
-    readonly scopeName: TS;
-
-    /** comment for this grammar */
-    readonly comment?: string;
-
-    /** this is an array of file type extensions that the grammar should (by default) be used with.*/
-    readonly fileTypes?: ReadonlyArray<string>;
-
-    /** these are regular expressions that lines (in the document) are matched against.
-     *  If a line matches one of the patterns (but not both), it becomes a folding marker */
-    readonly foldingStartMarker?: string;
-
-    /** these are regular expressions that lines (in the document) are matched against.
-     *  If a line matches one of the patterns (but not both), it becomes a folding marker */
-    readonly foldingStopMarker?: string;
-
-    /** a regular expression which is matched against the first line of the document (when it is first loaded).
-     *  If it matches, the grammar is used for the document (unless there is a user override). */
-    readonly firstLineMatch?: string;
-
-
-    /**this is an array with the actual rules used to parse the document. */
-    readonly patterns: ReadonlyArray<TmRule<TS, TO>>;
-
-    /** a dictionary (i.e. key/value pairs) of rules which can be included from other places in the grammar.
-     *  The key is the name of the rule and the value is the actual rule. */
-    readonly repository?: { readonly [key: string]: TmRule<TS, TO> };
-
-    /** A display name of the language that this grammar describes */
-    readonly name?: string;
-
-    // /** A uuid of the language that this grammar describes */
-    // readonly uuid?: string;
-}
-
-export namespace TmGrammar
-{
-    export type TmRule = TmMatchRule | TmBeginEndRule | TmRefRule;
-
-    interface TmRuleCommon
+    export class OnigRegexSrc
     {
-        /** comment for this specific rule */
-        readonly comment?: string;
+        constructor(readonly source: string) { }
+        toString(): string { return this.source; }
+    }
 
-        // /** flag indicates if the rule is enabled or disabled*/
-        // readonly disabled?: number;
+    const scopeNamePattern = /^[\w0-9]+(?:\.[\w0-9]+)*$/;
+    export class ScopeName
+    {
+        constructor(name: string);
+        constructor(gender: string, language: string);
+        constructor(gender: string, ...rest: string[]);
+        constructor(...parts: string[]);
+        constructor(...parts: string[])
+        {
+            if (parts.length === 1)
+            {
+                let nameStr = parts[0];
+                if (!scopeNamePattern.test(nameStr)) { throw new Error(`invalid scope name: ${nameStr}`); }
+                this.name = nameStr;
+                this.parts = nameStr.split('.');
+            }
+            else
+            {
+                this.name = parts.join('.');
+                if (!scopeNamePattern.test(this.name)) { throw new Error(`invalid scope name: ${this.name}`); }
+                this.parts = parts;
+            }
+        }
+        readonly name: string;
+
+        readonly parts: ReadonlyArray<string>;
+
+        /** most specializes part of the scope*/
+        get language(): string { return this.parts.last!; }
+        /** least specializes part of the scope*/
+        get scopeType(): string { return this.parts.first!; }
+
+        toString(): string { return this.parts.join('.'); }
+    }
+
+    export class RefName
+    {
+        constructor(rule: ScopeName);
+        constructor(lang: ScopeName, rule: ScopeName, mode: "external");
+        constructor(lang: ScopeName, mode: "external");
+        constructor(special: "$self" | "$base");
+        constructor(raw: string);
+        constructor(arg0: ScopeName | string | "$self" | "$base", arg1?: ScopeName | "external", arg2?: "external")
+        {
+            if (L.IsString(arg0))
+            {
+                if (arg0 === "$self" || arg0 === "$base") { this.special = arg0; }
+                else { this.rule = new ScopeName(arg0); }
+            }
+            else if (arg2 === "external") { this.lang = arg0; this.rule = arg1 as ScopeName; }
+            else if (arg1 === "external") { this.lang = arg0; }
+            else { this.rule = arg0; }
+        }
+        readonly lang?: ScopeName;
+        readonly rule?: ScopeName;
+        readonly special?: "$self" | "$base";
+        toString()
+        { return this.special ? this.special : this.lang ? `${this.lang.toString()}#${this.rule!.toString()}` : `#${this.rule!.toString()}`; }
+    }
+
+    export interface Grammar<TScopeName, TRegexStr, TRefName>
+    {
+        /** this should be a unique name for the grammar,following the convention of being a dot-separated name where each new (left-most) part specializes the name.
+         *  Normally it would be a two-part name where the first is either text or source and the second is the name of the language or document type.
+         *  But if you are specializing an existing type, you probably want to derive the name from the type you are specializing.
+         *  The advantage of deriving it from (in this case) text.html is that everything which works in the text.html scope
+         *  will also work in the text.html.«something» scope (but with a lower precedence than something specifically targeting text.html.«something»).*/
+        scopeName: TScopeName;
+
+        /** comment for this grammar */
+        comment?: string;
+
+        /** this is an array of file type extensions that the grammar should (by default) be used with.*/
+        fileTypes?: Array<string>;
+
+        /** these are regular expressions that lines (in the document) are matched against.
+         *  If a line matches one of the patterns (but not both), it becomes a folding marker */
+        foldingStartMarker?: string;
+
+        /** these are regular expressions that lines (in the document) are matched against.
+         *  If a line matches one of the patterns (but not both), it becomes a folding marker */
+        foldingStopMarker?: string;
+
+        /** a regular expression which is matched against the first line of the document (when it is first loaded).
+         *  If it matches, the grammar is used for the document (unless there is a user override). */
+        firstLineMatch?: string;
+
+
+        /**this is an array with the actual rules used to parse the document. */
+        patterns: Array<Rule<TScopeName, TRegexStr, TRefName>>;
+
+        /** a dictionary (i.e. key/value pairs) of rules which can be included from other places in the grammar.
+         *  The key is the name of the rule and the value is the actual rule. */
+        repository?: Repository<TScopeName, TRegexStr, TRefName>;
+
+        /** A display name of the language that this grammar describes */
+        name?: string;
+
+        // /** A uuid of the language that this grammar describes */
+        // uuid?: string;
+    }
+
+    export type Rule<TScopeName, TRegexStr, TRefName> = RuleGroup<TScopeName, TRegexStr, TRefName> | Match<TScopeName, TRegexStr, TRefName> | BeginEnd<TScopeName, TRegexStr, TRefName> | BeginWhile<TScopeName, TRegexStr, TRefName> | Include;
+
+    export interface RuleCommon<TScopeName, TRegexStr, TRefName>
+    {
+        /** comment for this rule */
+        comment?: string;
 
         /** the scoped name which gets assigned to the portion matched.
          *  for unnamed match parent name will be used for the segment of code
          *  the name follows the convention of being a dot-separated name where each new (left-most) part specializes the name
          *  and should generally be derived from one of the standard names. */
-        readonly name?: TmScopeName;
-
+        name?: TScopeName;
         /** a dictionary (i.e. key/value pairs) of rules which can be included from other places in the grammar.
          *  The key is the name of the rule and the value is the actual rule. */
-        readonly repository?: { readonly [key: string]: TmGrammar.TmRule };
+        repository?: Repository<TScopeName, TRegexStr, TRefName>;
 
+        /** This is a convenient way to experiment or develop, leaving a rule in place while effectively commenting it out */
+        disabled?: 1;
     }
 
-    interface TmBeginEndRule extends TmRuleCommon
+    export interface RuleGroup<TScopeName, TRegexStr, TRefName> extends RuleCommon<TScopeName, TRegexStr, TRefName>
+    {
+        /** an array of Rules in this group. */
+        patterns: Array<Rule<TScopeName, TRegexStr, TRefName>>;
+    }
+
+    export function IsRuleGroup<TScopeName, TRegexStr, TRefName>(rule: RuleGroup<TScopeName, TRegexStr, TRefName>): rule is RuleGroup<TScopeName, TRegexStr, TRefName>
+    {
+        return (<any>rule).patterns !== undefined && (<any>rule).match === undefined && (<any>rule).begin === undefined && (<any>rule).include === undefined;
+    }
+
+    export interface Match<TScopeName, TRegexStr, TRefName> extends RuleCommon<TScopeName, TRegexStr, TRefName>
+    {
+        /** a regular expression which is used to identify the portion of text to which the name should be assigned. */
+        match: TRegexStr;
+
+        /** keys allow you to assign attributes to the captures of the match */
+        captures?: Captures<TScopeName, TRegexStr, TRefName>;
+
+        //patterns need to be in captures as there are nothing to match here
+        //patterns: Array<TmRule>;
+    }
+
+    export function IsMatchRule<TScopeName, TRegexStr, TRefName>(rule: Match<TScopeName, TRegexStr, TRefName>): rule is Match<TScopeName, TRegexStr, TRefName>
+    {
+        return (<any>rule).match !== undefined && (<any>rule).begin === undefined && (<any>rule).include === undefined;
+    }
+
+    export interface BeginEnd<TScopeName, TRegexStr, TRefName> extends RuleCommon<TScopeName, TRegexStr, TRefName>
     {
         /** a regular expression pattern that starts a block
          *  togather with end, allow matches which span several lines and must both be mutually exclusive with the match key.*/
-        readonly begin: string;
+        begin: TRegexStr;
 
         /** a regular expression pattern that ends a block
          *  togather with begin, allow matches which span several lines and must both be mutually exclusive with the match key.*/
-        readonly end: string;
+        end: TRegexStr;
 
         /** key allow you to assign attributes to the captures of the begin patterns. */
-        readonly beginCaptures?: TmCapturesByID;
+        beginCaptures?: { [index in CaptureID]?: Rule<TScopeName, TRegexStr, TRefName> | { name: TScopeName }; };
 
         /** key allow you to assign attributes to the captures of the end patterns. */
-        readonly endCaptures?: TmCapturesByID;
+        endCaptures?: { [index in CaptureID]?: Rule<TScopeName, TRegexStr, TRefName> | { name: TScopeName }; };
 
         /** a short-hand allow you to assign attributes to the captures of the begin and end patterns with same values. */
-        readonly captures?: TmCapturesByID;
+        captures?: { [index in CaptureID]?: Rule<TScopeName, TRegexStr, TRefName> | { name: TScopeName }; };
 
         /** this key is similar to the name key but only assigns the name to the text between what is matched by the begin/end patterns. */
-        readonly contentName?: TmScopeName;
+        contentName?: TScopeName;
 
         /** array of the actual rules used to parse the document. */
-        readonly patterns?: ReadonlyArray<TmRule>;
+        patterns?: ReadonlyArray<Rule<TScopeName, TRegexStr, TRefName>>;
 
-        readonly applyEndPatternLast?: boolean;
+        applyEndPatternLast?: boolean;
+
     }
 
-    interface TmMatchRule extends TmRuleCommon
+    export function IsBeginEndRule<TScopeName, TRegexStr, TRefName>(rule: BeginEnd<TScopeName, TRegexStr, TRefName>): rule is BeginEnd<TScopeName, TRegexStr, TRefName>
     {
-        /** a regular expression which is used to identify the portion of text to which the name should be assigned. */
-        readonly match: string;
-
-        /** keys allow you to assign attributes to the captures of the match */
-        readonly captures?: TmCapturesByID;
+        return (<any>rule).match === undefined && (<any>rule).begin !== undefined && (<any>rule).end !== undefined && (<any>rule).while === undefined && (<any>rule).include === undefined;
     }
 
-    interface TmRefRule
+    export interface BeginWhile<TScopeName, TRegexStr, TRefName> extends RuleCommon<TScopeName, TRegexStr, TRefName>
+    {
+        /** a regular expression pattern that starts a block
+         *  togather with end, allow matches which span several lines and must both be mutually exclusive with the match key.*/
+        begin: TRegexStr;
+
+        /** a regular expression pattern that ends a block
+         *  togather with begin, allow matches which span several lines and must both be mutually exclusive with the match key.*/
+        while: TRegexStr;
+
+        /** a short-hand allow you to assign attributes to the captures of the begin and end patterns with same values. */
+        captures?: { [index in CaptureID]?: Rule<TScopeName, TRegexStr, TRefName> | { name: TScopeName }; };
+
+        /** array of the actual rules used to parse the document. */
+        patterns?: Array<Rule<TScopeName, TRegexStr, TRefName>>;
+    }
+
+    export function IsBeginWhileRule<TScopeName, TRegexStr, TRefName>(rule: BeginWhile<TScopeName, TRegexStr, TRefName>): rule is BeginWhile<TScopeName, TRegexStr, TRefName>
+    {
+        return (<any>rule).match === undefined && (<any>rule).begin !== undefined && (<any>rule).while !== undefined && (<any>rule).end === undefined && (<any>rule).include === undefined;
+    }
+
+    export interface Include<TRefName>
     {
         /** this allows you to reference a different language, recursively reference the grammar itself or a rule declared in this file’s repository. 
          *  1.To reference another language, use the scope name of that language.
          *  2.To reference the grammar itself, use $self.
          *  3.To reference a rule from the current grammars repository, prefix the name with a pound sign (#).
         */
-        readonly include: string;
+        include: TRefName;
     }
 
+    export function IsIncludeRule<TRefName>(rule: Include<TRefName>): rule is Include<TRefName>
+    {
+        return (<any>rule).include !== undefined;
+    }
 
-    export function LoadRaw(src: string): TmGrammar | undefined
+    export type Repository<TScopeName, TRegexStr, TRefName> = { [key: string]: Rule<TScopeName, TRegexStr, TRefName> };
+    export type Captures<TScopeName, TRegexStr, TRefName> = { [index in CaptureID]?: Rule<TScopeName, TRegexStr, TRefName> | { name: TScopeName }; };
+
+    export type RawGrammar = Grammar<string, string, string>;
+    export type RawRule = Rule<string, string, string>;
+    export type RawCaptrues = Captures<string, string, string>;
+
+    export type Grammar2 = Grammar<TokenName, OnigRegexSrc, RefName>;
+    export type Rule2 = Rule<TokenName, OnigRegexSrc, RefName>;
+    export type Captrues2 = Captures<TokenName, OnigRegexSrc, RefName>;
+
+    export function LoadRaw(src: string): RawGrammar | undefined
     {
         try
         {
@@ -228,178 +259,59 @@ export namespace TmGrammar
             else { return; }
         }
         catch (e) { return; }
+    }
+
+    export function validate(raw: RawGrammar): Grammar2 | undefined
+    {
 
     }
 
-    export function BuildTokenLiterialType(tm: TmGrammar, typeName?: string): string
+    export function BuildScopeLiterialType(tm: RawGrammar | Grammar2, typeName?: string): string
     {
         let out = `type ${typeName === undefined ? "TokenNames" : typeName} = `;
-        for (const name of editTokenNameSet(tm)) { out += `'${name}' | `; }
+        for (const name of GetScopeNameSet(tm)) { out += `'${name}' | `; }
         return out.slice(0, out.lastIndexOf(" | ")) + ";";
     }
 
-    export function editTokenNameSet(tm: TmGrammar): Set<string>
+    export function GetScopeNameSet(tm: RawGrammar | Grammar2): Set<string>
     {
+        let findNameInRule = function (rule: RawRule | Rule2, names: Set<string>)
+        {
+            if (rule)
+            {
+                let [name, contentName, patterns, repo, ...caps] =
+                    [
+                        (rule as any).name,
+                        (rule as any).contentName,
+                        (rule as any).patterns,
+                        (rule as any).repository,
+                        (rule as any).beginCaptures,
+                        (rule as any).endCaptures,
+                        (rule as any).captures
+                    ];
+                if (name) { names.add(name.toString()); }
+                if (contentName) { names.add(contentName.toString()); }
+                if (repo) { for (const key in repo) { findNameInRule(repo[key], names); } }
+                if (patterns) { for (let i = 0, len = patterns.length; i < len; i++) { findNameInRule(patterns[i], names); } }
+                for (let i = 0, len = caps.length; i < len; i++)
+                {
+                    let cap = caps[i];
+                    if (cap) { for (const id in cap) { findNameInRule(cap[id as CaptureID], names); } } 
+                }
+            }
+        };
+
         let names: Set<string> = new Set<string>();
-        let [p, repo] = [tm.patterns, tm.repository];
-        findNameInPatterns(p, names);
+        let [patterns, repo] = [tm.patterns, tm.repository];
+        if (patterns) { for (let i = 0, len = patterns.length; i < len; i++) { findNameInRule(patterns[i], names); } }
         if (repo) { for (const key in repo) { findNameInRule(repo[key], names); } }
         return names;
     }
 
-    function findNameInPatterns(patterns: ReadonlyArray<TmRule>, names: Set<string>)
-    {
-        if (!patterns) { return; }
-        for (let i = 0, len = patterns.length; i < len; i++)
-        { findNameInRule(patterns[i], names); }
-    }
-
-    function findNameInRule(rule: TmRule, names: Set<string>)
-    {
-        if (!rule) { return; }
-        let [n, cn, p, ...ms] =
-            [
-                (rule as any).name,
-                (rule as any).contentName,
-                (rule as any).patterns,
-                (rule as any).begin,
-                (rule as any).end, (rule as any).match
-            ];
-
-        if (n) { names.add(n); }
-        if (cn) { names.add(cn); }
-        findNameInPatterns(p, names);
-        for (let i = 0, len = ms.length; i < len; i++)
-        { findNameInCaptures(ms[i], names); }
-    }
-
-    function findNameInCaptures(cap: TmCapturesByID, names: Set<string>)
-    {
-        if (!cap) { return; }
-        for (const id in cap)
-        {
-            let cr = cap[id as TmCaptureID];
-            if (cr)
-            {
-                let [n, p] = [(cr as any).name, (cr as any).patterns];
-                if (n !== undefined) { names.add(n); }
-                findNameInPatterns(p, names);
-            }
-        }
-    }
-
-    export type TmCapturesByID = { readonly [index in TmCaptureID]?: TmCaptureRule; };
-
-    interface TmCaptureRule
-    {
-        /** the scoped name which gets assigned to the portion matched. 
-         *  for unnamed match parent name will be used for the segment of code
-         *  the name follows the convention of being a dot-separated name where each new (left-most) part specializes the name 
-         *  and should generally be derived from one of the standard names. */
-        readonly name?: TmScopeName;
-
-        /** array of the actual rules used to parse the document. */
-        readonly patterns?: TmRule[];
-    }
-
-    //#region edit------------------------------------------------------------------------
-    export interface TmGrammarEdit extends TmGrammar
-    {
-        seTS(name: TokenName): void;
-        setGrammarName(name: string): void;
-
-        setFileTypes(...types: string[]): void;
-        addFileType(...types: string[]): void;
-        removeFileType(...keys: (string | number)[]): void;
-
-        setFirstLineMatch(match: string): void;
-
-        addRootRule(...patterns: TmRule[]): void;
-        removeRootRule(...i: number[]): void;
-        setRootRule(i: number, run: TmRule): void;
-        editRootRule(i: number): TmRuleEdit | undefined;
-
-        addRepositoryRule(key: string, rule: TmRule): void;
-        addRepositoryRule(...patterns: [string, TmRule][]): void;
-        removeRepositoryRule(...keys: (string | number)[]): void;
-        setRepositoryRule(key: (string | number), rule: TmRule): void;
-        editRepositoryRule(key: string | number): TmRuleEdit | undefined;
-    }
-
-    type TmRuleEdit = TmMatchRuleEdit | TmBeginEndRuleEdit | TmRefRuleEdit;
-
-    interface TmPatternBaseEdit extends TmRuleCommon
-    {
-        setTokenName(name: TokenName | undefined): void;
-        setCommnet(cmt: string | undefined): void;
-        enable(): void;
-        disable(): void;
-
-        addRule(...patterns: TmRule[]): void;
-        removeRule(...i: number[]): void;
-        setRule(i: number, rule: TmRule): void;
-        editRule(i: number): TmRuleEdit | undefined;
-    }
-
-    export interface TmMatchRuleEdit extends TmPatternBaseEdit, TmMatchRule
-    {
-        setMatch(match: string): void;
-        removeCapture(...i: number[]): void;
-        addCapture(...cap: TmCaptureRule[]): void;
-        setCapture(i: number, cap: TmCaptureRule): void;
-        editCapture(i: number): TmCapEdit;
-    }
-
-    export interface TmBeginEndRuleEdit extends TmPatternBaseEdit, TmBeginEndRule
-    {
-        setContentTokenName(name: TokenName | undefined): void;
-
-        setBeginMatch(match: string): void;
-
-        removeBeginCapture(...i: number[]): void;
-        addBeginCapture(...cap: TmCaptureRule[]): void;
-        setBeginCapture(i: number, cap: TmCaptureRule): void;
-        editBeginCapture(i: number): TmCapEdit;
-
-        setEndMatch(match: string): void;
-
-        removeEndCapture(...i: number[]): void;
-        addEndCapture(...cap: TmCaptureRule[]): void;
-        setEndCapture(i: number, cap: TmCaptureRule): void;
-        editEndCapture(i: number): TmCapEdit;
-
-        removeCapture(...i: number[]): void;
-        addCapture(...cap: TmCaptureRule[]): void;
-        setCapture(i: number, cap: TmCaptureRule): void;
-        editCapture(i: number): TmCapEdit;
-
-        setApplyEndPatternLast(index: number | undefined): void;
-    }
-
-    export interface TmRefRuleEdit extends TmRefRule
-    {
-        setReference(key: string): void;
-    }
-
-    type TmCapEdit = TmCaptureEdit | TmCapturePatternsEdit;
-
-    export interface TmCaptureEdit extends TmCaptureName
-    {
-        NameName(name: TokenName): void;
-    }
-
-    export interface TmCapturePatternsEdit extends TmCaptureSub
-    {
-        addRule(...patterns: TmRule[]): void;
-        removeRule(...i: number[]): void;
-        setRule(i: number, rule: TmRule): void;
-        editRule(i: number): TmRuleEdit | undefined;
-    }
-    //#endregion edit------------------------------------------------------------------------
 }
 
 //#region literials------------------------------------------------------------------------
-export type TmCaptureID =
+export type CaptureID =
     "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" |
     "10" | "11" | "12" | "13" | "14" | "15" | "16" | "17" | "18" | "19" |
     "20" | "21" | "22" | "23" | "24" | "25" | "26" | "27" | "28" | "29" |
