@@ -1,10 +1,11 @@
-// File: textmate-grammar-generator.ts                                             //
-// Project: lieene.CodeFactory                                                     //
+// File: grammar.ts                                                                //
+// Project: lieene.tm-grammar                                                      //
 // Author: Lieene Guo                                                              //
 // MIT License, Copyright (c) 2019 Lieene@ShadeRealm                               //
-// Created Date: Thu Nov 7 2019                                                    //
+// Created Date: Sat Nov 23 2019                                                   //
 // Last Modified: Sat Nov 23 2019                                                  //
 // Modified By: Lieene Guo                                                         //
+
 
 import * as L from "@lieene/ts-utility";
 import { Text } from "text-editing";
