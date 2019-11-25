@@ -3,7 +3,7 @@
 // Author: Lieene Guo                                                              //
 // MIT License, Copyright (c) 2019 Lieene@ShadeRealm                               //
 // Created Date: Sat Nov 23 2019                                                   //
-// Last Modified: Sun Nov 24 2019                                                  //
+// Last Modified: Mon Nov 25 2019                                                  //
 // Modified By: Lieene Guo                                                         //
 
 
@@ -12,7 +12,6 @@ import { Text } from "text-editing";
 import { Tree, Name } from "poly-tree";
 import { OnigScanner } from "oniguruma-ext";
 import { Textmate as tm } from "./tm-grammar";
-import { type } from "os";
 import { promisify } from "util";
 
 export class Grammar
@@ -20,110 +19,117 @@ export class Grammar
     static IsGrammar<T>(obj: T | Grammar): obj is Grammar
     { return (obj as Grammar).tokenizeSource !== undefined; }
 
-    constructor(src: tm.RawGrammar)
+    constructor(src: tm.RawGrammar | tm.ValidGrammar)
     {
+        if (!tm.IsValidated(src))
+        { src = tm.Validate(src); }
         let hasSource = this.abstract = src !== undefined;
-        this.scopeName = hasSource ? new Grammar.TokenName(src.scopeName) : L.Uny;
+        this.scopeName = hasSource ? src.scopeName : L.Uny;
         this.displayName = this.scopeName.language;
-        this.repo = new Map<string, Grammar.Rule>();
-        this.ptns = [];
+        this.repository = new Map<string, Grammar.Rule>();
+        this.patterns = [];
+        this.rules = [];
         if (hasSource)
         {
             //TODO: parse TmGrammar;
+            LoadedGrammars.set(this.scopeName, this);
         }
     }
 
     copyFrom(from: Grammar | Tree.NodeType<GrammarRepo>): void
     {
-        (this as any).tmSource = from.tmSource;
         (this as any).scopeName = from.scopeName;
         (this as any).displayName = from.displayName;
         (this as any).abstract = from.abstract;
-        this.repo.clear();
-        from.repository.forEach((v, k) => this.repo.set(k, v));
-        this.ptns = from.patterns.map(p => p);
+        let repo = this.repository as Map<string, Grammar.Rule>;
+        repo.clear();
+        from.repository.forEach((v, k) => repo.set(k, v));
+        (this as any).patterns = from.patterns.map(p => p);
+        (this as any).rules = from.rules.map(p => p);
     }
 
-    readonly tmSource?: tm.RawGrammar;
+    /** indicates this grammar is a empty placehold in GrammarRepo */
     readonly abstract: boolean;
 
     readonly displayName: string;
     readonly scopeName: Grammar.TokenName;
     get languageName(): string { return this.scopeName.language; }
 
-    protected repo: Map<string, Grammar.Rule>;
-    public get repository(): ReadonlyMap<string, Grammar.Rule> { return this.repo; }
-
-    protected ptns: Array<Grammar.Rule>;
-    public get patterns(): ReadonlyArray<Grammar.Rule> { return this.ptns; }
+    readonly repository: ReadonlyMap<string, Grammar.Rule>;
+    readonly patterns: ReadonlyArray<Grammar.Rule>;
+    readonly rules: ReadonlyArray<Grammar.Rule>;
 
     link(): void
     {
-        this.repo.forEach(v => v.link(this as unknown as GrammarNode));
-        this.ptns.forEach(p => p.link(this as unknown as GrammarNode));
+        this.repository.forEach(v => v.link(this as unknown as GrammarNode));
+        this.patterns.forEach(p => p.link(this as unknown as GrammarNode));
     }
 
-    public findRule(name: string) { return this.repo.get(name); }
+    public findRule(name: string) { return this.repository.get(name); }
 
-    tokenizeSource(source: string | Text): SyntaxTree
+    tokenizeSource(source: string | Text, callback: (e: Error, tree: SyntaxTree) => void): void
+    {
+        var stack: Grammar.MatchStack = [];
+    }
+
+    tokenizeSourceAsync = promisify(this.tokenizeSource);
+
+    tokenizeLines(line: string[], stack: Grammar.MatchStack, tree: SyntaxTree): void
     { }
 
-    tokenizeLines(line: string[], parent?: SyntaxTree.Token): Tree.NodeType<SyntaxTree>
-    { }
-
-    tokenizeLine(line: string, parent?: SyntaxTree.Token): Tree.NodeType<SyntaxTree>
+    tokenizeLine(line: string, stack: Grammar.MatchStack, tree: SyntaxTree): void
     { }
 }
 export namespace Grammar
 {
-    const scopeNamePattern = /^[\w0-9]+(?:\.[\w0-9]+)*$/;
-    export class TokenName
-    {
-        constructor(name: string);
-        constructor(gender: string, language: string);
-        constructor(gender: string, ...rest: string[]);
-        constructor(...parts: string[]);
-        constructor(...parts: string[])
-        {
-            if (parts.length === 1)
-            {
-                let nameStr = parts[0];
-                if (!scopeNamePattern.test(nameStr)) { throw new Error(`invalid scope name: ${nameStr}`); }
-                this.name = nameStr;
-                this.parts = nameStr.split('.');
-            }
-            else
-            {
-                this.name = parts.join('.');
-                if (!scopeNamePattern.test(this.name)) { throw new Error(`invalid scope name: ${this.name}`); }
-                this.parts = parts;
-            }
-        }
-        readonly name: string;
-
-        readonly parts: ReadonlyArray<string>;
-
-        /** most specializes part of the scope*/
-        get language(): string { return this.parts.last!; }
-        /** least specializes part of the scope*/
-        get scopeType(): string { return this.parts.first!; }
-    }
+    export import TokenName = tm.ScopeName;
     export function IsTokenName(obj: any): obj is TokenName
     { return Object.getPrototypeOf(obj) === TokenName.prototype; }
 
+    export class MatchStackElem
+    {
+        constructor(public curRule: Rule, readonly text: Text, pos: Text.Pos | number)
+        { [this.pos, this.offset] = L.IsNumber(pos) ? [this.text.convert(pos), pos] : [pos, this.text.convert(pos)]; }
+        pos: Text.Pos;
+        offset: number;
+    }
+
+    export type MatchStack = Array<MatchStackElem>;
+
     export abstract class Rule
     {
-        abstract link(gramma: GrammarNode): void;
-        abstract apply(source: string, pos: number, callBack: (e: Error, rule: Rule, token: TokenExt) => void): void;
-        abstract applyDebug(source: string, pos: number, callBack: (e: Error, rule: Rule, token: TokenExt) => void): void;
-        applyAsync = promisify(this.apply);
-        applyDebugAsync = promisify(this.applyDebug);
+        constructor(readonly grammar: Grammar)
+        { }
+        abstract link(grammar: GrammarNode): void;
+        abstract apply(line: string, stack: MatchStack, tree: SyntaxTree): void;
+    }
+    export class IncludeRule extends Rule
+    {
+        constructor(grammar: Grammar, include: tm.RefName)
+        {
+            super(grammar);
+            this.refName = include;
+        }
+
+        refName: tm.RefName;
+        refRule?: Rule;
+
+        link(grammar: GrammarNode): void
+        {
+            throw new Error("Method not implemented.");
+        }
+        apply(line: string, stack: MatchStackElem[], tree: SyntaxTree): void
+        {
+            throw new Error("Method not implemented.");
+        }
     }
 }
 
 /** Set of grammar to parse different languages */
 export type GrammarRepo = Tree.MorphTreeS<Grammar & { readonly gScope: string }, RepoBuilder.RepoFunc>;
 export type GrammarNode = Tree.NodeType<GrammarRepo>;
+
+export var LoadedGrammars: Map<tm.ScopeName, Grammar>;
 
 /** build a new GrammatSet */
 export function GrammarRepo(...grammars: Grammar[]): GrammarRepo
@@ -138,6 +144,13 @@ let rootGrammar = { abstract: true, gScope: "global" } as unknown as Grammar;
 
 namespace RepoBuilder
 {
+    function abstractGrammar(gScope: string): any
+    {
+        let g: any = new Grammar(L.Uny);
+        g.abstract = true;
+        g.gScope = gScope;
+        return g;
+    }
     export function RepoFunc(): RepoFunc
     {
         let rf: RepoFunc = L.Any;
@@ -199,15 +212,6 @@ namespace RepoBuilder
 
         return rf;
     }
-
-    function abstractGrammar(gScope: string): any
-    {
-        let g: any = new Grammar(L.Uny);
-        g.abstract = true;
-        g.gScope = gScope;
-        return g;
-    }
-
     export interface RepoFunc
     {
         findGrammar(name: Grammar.TokenName | string): Grammar | undefined;
