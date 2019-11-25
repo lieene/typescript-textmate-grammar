@@ -158,7 +158,7 @@ namespace RepoBuilder
         rf.findGrammar = function (this: Tree.Nomalize<GrammarRepo>, name: Grammar.TokenName | string): Grammar | undefined
         {
             if (L.IsString(name)) { name = new Grammar.TokenName(name); }
-            let parts = name.parts;
+            let parts = name.stackParts;
             let node = this.root;
             for (let i = 0, len = parts.length; i < len; i++)
             {
@@ -175,7 +175,7 @@ namespace RepoBuilder
             if (grammar === undefined) { throw new Error("grammar is null"); }
             if (name === undefined) { name = grammar.scopeName; }
             else if (L.IsString(name)) { name = new Grammar.TokenName(name); }
-            let parts = name.parts;
+            let parts = name.stackParts;
             let node = this.root;
             for (let i = 0, len = parts.length, last = len - 1; i < len; i++)
             {

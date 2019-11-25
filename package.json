@@ -39,6 +39,7 @@
     "@types/node": "^12.12.8",
     "@types/vscode": "^1.40.0",
     "jest": "^24.9.0",
+    "oniguruma": "^7.2.1",
     "prettier": "^1.19.1",
     "ts-jest": "^24.1.0",
     "tslint": "^5.20.1",
@@ -49,7 +50,7 @@
     "out/**/*"
   ],
   "dependencies": {
-    "oniguruma-ext": "^1.1.13",
+    "oniguruma-ext": "^1.1.17",
     "text-editing": "^1.0.8"
   }
 }

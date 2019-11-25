@@ -5,14 +5,18 @@
 // Created Date: Fri Nov 8 2019                                                    //
 // Last Modified: Mon Nov 25 2019                                                  //
 // Modified By: Lieene Guo                                                         //
-import { Grammar } from "./grammar";
 import * as L from "@lieene/ts-utility";
-import TokenName = Grammar.TokenName;
 import { OnigScanner } from "oniguruma-ext";
-
+import { Text } from "text-editing";
+import { Name } from "poly-tree";
 export namespace Textmate
 {
-    const scopeNamePattern = /^[\w0-9]+(?:\.[\w0-9]+)*$/;
+    //#region helper types
+
+    //https://regex101.com/r/tQeI1f/1
+    export const scopeNamePattern = /^(?:[\w0-9][\-\w0-9]*|\$(?:\d+|[\w]+\([\w]+\)))(?:\.(?:[\w0-9][\-\w0-9]*|\$(?:\d+|[\w]+\([\w]+\))))*$/;
+    //https://regex101.com/r/2f16K8/1
+    export const scopeNameCmdPattern = /^\$(?:(\d+)|([\w]+)\(([\w]+)\))$/;
     export class ScopeName
     {
         constructor(name: string);
@@ -24,68 +28,96 @@ export namespace Textmate
             if (parts.length === 1)
             {
                 let nameStr = parts[0];
-                if (!scopeNamePattern.test(nameStr)) { throw new Error(`invalid scope name: ${nameStr}`); }
-                this.name = nameStr;
-                this.parts = nameStr.split('.');
+                this.stackNames = nameStr.split(/\s+/);
+                var pts = new Array<Array<string>>();
+                this.stackNames.forEach(n =>
+                {
+                    if (!scopeNamePattern.test(n)) { throw new Error(`invalid scope name: ${n}`); }
+                    pts.push(n.split('.'));
+                });
+                this.stackParts = pts;
             }
             else
             {
-                this.name = parts.join('.');
-                if (!scopeNamePattern.test(this.name)) { throw new Error(`invalid scope name: ${this.name}`); }
-                this.parts = parts;
+                this.stackNames = [parts.join('.')];
+                if (!scopeNamePattern.test(this.stackNames[0])) { throw new Error(`invalid scope name: ${this.stackNames[0]}`); }
+                this.stackParts = [parts];
             }
         }
-        readonly name: string;
+        readonly stackNames: ReadonlyArray<string>;
+        readonly stackParts: ReadonlyArray<ReadonlyArray<string>>;
 
-        readonly parts: ReadonlyArray<string>;
+        get name(): string { return this.stackNames.last!; }
+        get parts(): ReadonlyArray<string> { return this.stackParts.last!; }
 
         /** most specializes part of the scope*/
-        get language(): string { return this.parts.last!; }
+        get language(): string { return this.stackParts.last!.last!; }
         /** least specializes part of the scope*/
-        get scopeType(): string { return this.parts.first!; }
+        get scopeType(): string { return this.stackParts.last!.first!; }
 
-        toString(): string { return this.parts.join('.'); }
+        static parseCommand(part: string): undefined |
+            number | { cmd: string, param: string }
+        {
+            let match = part.match(scopeNameCmdPattern);
+            if (match)
+            {
+                let num = match[1];
+                if (num && num.length > 0) { return Number.parseInt(match[1]); }
+                let [cmd, param] = [match[2], match[3]];
+                if (cmd) { return { cmd, param }; }
+            }
+        }
+
+        toString(): string { return this.stackParts.map(p => p.join('.')).join(' '); }
     }
 
     export class RefName
     {
-        constructor(rule: ScopeName);
-        constructor(lang: ScopeName, rule: ScopeName, mode: "external");
-        constructor(lang: ScopeName, mode: "external");
+        constructor(rule: string, mode: "$local");
+        constructor(lang: ScopeName, rule: string, mode: "$external");
+        constructor(lang: ScopeName, mode: "$external");
         constructor(special: "$self" | "$base");
         constructor(raw: string);
-        constructor(arg0: ScopeName | string | "$self" | "$base", arg1?: ScopeName | "external", arg2?: "external")
+        constructor(arg0: ScopeName | string | "$self" | "$base", arg1?: string | "$external" | "$local", arg2?: "$external")
         {
             if (L.IsString(arg0))
             {
                 if (arg0 === "$self" || arg0 === "$base") { this.special = arg0; }
-                else 
+                else if (arg1 === "$local") { this.rule = arg0; }
+                else
                 {
                     if (arg0.startsWith("#"))
-                    { this.rule = new ScopeName(arg0.substring(1)); }
+                    { this.rule = arg0.substring(1); }
                     else 
                     {
                         let parts = arg0.split("#");
                         if (parts[0].length === arg0.length)
                         { this.lang = new ScopeName(arg0); }
                         else if (parts.length === 2)
-                        { [this.lang, this.rule] = [new ScopeName(parts[0]), new ScopeName(parts[1]);]; }
+                        { [this.lang, this.rule] = [new ScopeName(parts[0]), parts[1]]; }
                         else { throw new Error(`invalid lang#rule form ${arg0}`); }
                     }
                 }
             }
-            else if (arg2 === "external") { [this.lang, this.rule] = [arg0, arg1 as ScopeName]; }
-            else if (arg1 === "external") { this.lang = arg0; }
-            else { this.rule = arg0; }
+            else if (arg1 === "$external") { this.lang = arg0; }
+            else if (arg2 === "$external") { [this.lang, this.rule] = [arg0, arg1 as string]; }
         }
         get isExternal(): boolean { return this.lang !== undefined; }
+        get isLocal(): boolean { return this.lang === undefined; }
         get is$self(): boolean { return this.special === "$self"; }
-        get isbase(): boolean { return this.special === "$base"; }
+        get is$base(): boolean { return this.special === "$base"; }
         readonly lang?: ScopeName;
-        readonly rule?: ScopeName;
+        readonly rule?: string;
         readonly special?: "$self" | "$base";
         toString()
-        { return this.special ? this.special : this.lang ? `${this.lang.toString()}#${this.rule!.toString()}` : `#${this.rule!.toString()}`; }
+        {
+            return this.special ? this.special :
+                this.lang ?
+                    (this.rule ?
+                        `${this.lang.toString()}#${this.rule!.toString()}` :
+                        this.lang.toString()) :
+                    `#${this.rule!.toString()}`;
+        }
     }
 
     export function TestCaptureID(id: string): void
@@ -94,14 +126,28 @@ export namespace Textmate
         if (nid < 0) { throw new Error(`invalid capture id[${id}]`); }
     }
 
-    export interface Grammar<TScopeName, TRegexStr, TRefName>
+    export interface RuleLocater
+    {
+        key?: string;
+        index: number;
+        parent?: Grammar | Rule;
+    }
+
+    export type Repository = { [key: string]: Rule };
+
+    export type Captures = { [index in CaptureID]?: Rule | NameRule };
+
+    //#endregion helper types
+
+
+    export interface Grammar extends RuleLocater
     {
         /** this should be a unique name for the grammar,following the convention of being a dot-separated name where each new (left-most) part specializes the name.
          *  Normally it would be a two-part name where the first is either text or source and the second is the name of the language or document type.
          *  But if you are specializing an existing type, you probably want to derive the name from the type you are specializing.
          *  The advantage of deriving it from (in this case) text.html is that everything which works in the text.html scope
          *  will also work in the text.html.«something» scope (but with a lower precedence than something specifically targeting text.html.«something»).*/
-        scopeName: TScopeName;
+        scopeName: ScopeName;
 
         /** comment for this grammar */
         comment?: string;
@@ -123,22 +169,27 @@ export namespace Textmate
 
 
         /**this is an array with the actual rules used to parse the document. */
-        patterns: Array<Rule<TScopeName, TRegexStr, TRefName>>;
+        patterns: Array<Rule>;
 
         /** a dictionary (i.e. key/value pairs) of rules which can be included from other places in the grammar.
          *  The key is the name of the rule and the value is the actual rule. */
-        repository?: Repository<TScopeName, TRegexStr, TRefName>;
+        repository?: Repository;
+
+        /** alias for scopeName*/
+        name: ScopeName;
 
         /** A display name of the language that this grammar describes */
-        name?: TScopeName;
+        displayName?: string;
 
-        // /** A uuid of the language that this grammar describes */
-        // uuid?: string;
+        updateRules: () => Array<AnyRule>;
+        ruleMap: () => Map<string, Rule>;
     }
 
-    export type Rule<TScopeName, TRegexStr, TRefName> = RuleGroup<TScopeName, TRegexStr, TRefName> | Match<TScopeName, TRegexStr, TRefName> | BeginEnd<TScopeName, TRegexStr, TRefName> | BeginWhile<TScopeName, TRegexStr, TRefName> | Include<TRefName>;
+    //#region Rules
+    export type Rule = RuleGroup | Match | BeginEnd | BeginWhile | Include;
+    export type AnyRule = Rule | NameRule;
 
-    export interface RuleCommon<TScopeName, TRegexStr, TRefName>
+    export interface RuleCommon extends RuleLocater
     {
         /** comment for this rule */
         comment?: string;
@@ -147,270 +198,214 @@ export namespace Textmate
          *  for unnamed match parent name will be used for the segment of code
          *  the name follows the convention of being a dot-separated name where each new (left-most) part specializes the name
          *  and should generally be derived from one of the standard names. */
-        name?: TScopeName;
+        name?: ScopeName;
         /** a dictionary (i.e. key/value pairs) of rules which can be included from other places in the grammar.
          *  The key is the name of the rule and the value is the actual rule. */
-        repository?: Repository<TScopeName, TRegexStr, TRefName>;
+        repository?: Repository;
 
         /** This is a convenient way to experiment or develop, leaving a rule in place while effectively commenting it out */
         disabled?: 1;
+
+
     }
 
-    export interface RuleGroup<TScopeName, TRegexStr, TRefName> extends RuleCommon<TScopeName, TRegexStr, TRefName>
+    export interface NameRule extends RuleCommon
+    {
+        /** the scoped name which gets assigned to the portion matched.
+         *  for unnamed match parent name will be used for the segment of code
+         *  the name follows the convention of being a dot-separated name where each new (left-most) part specializes the name
+         *  and should generally be derived from one of the standard names. */
+        name: ScopeName;
+    }
+
+    export interface RuleGroup extends RuleCommon
     {
         /** an array of Rules in this group. */
-        patterns: Array<Rule<TScopeName, TRegexStr, TRefName>>;
+        patterns: Array<Rule>;
     }
 
-    export function IsRuleGroup<TScopeName, TRegexStr, TRefName>(rule: RuleGroup<TScopeName, TRegexStr, TRefName>): rule is RuleGroup<TScopeName, TRegexStr, TRefName>
+    export function IsRuleGroup(rule: RuleGroup): rule is RuleGroup
     {
         return (<any>rule).patterns && !(<any>rule).match && !(<any>rule).begin && !(<any>rule).include;
     }
 
-    export interface Match<TScopeName, TRegexStr, TRefName> extends RuleCommon<TScopeName, TRegexStr, TRefName>
+    export interface Match extends RuleCommon
     {
         /** a regular expression which is used to identify the portion of text to which the name should be assigned. */
-        match: TRegexStr;
+        match: OnigScanner;
 
         /** keys allow you to assign attributes to the captures of the match */
-        captures?: Captures<TScopeName, TRegexStr, TRefName>;
-
-        //patterns need to be in captures as there are nothing to match here
-        //patterns: Array<TmRule>;
+        captures?: Captures;
     }
 
-    export function IsMatchRule<TScopeName, TRegexStr, TRefName>(rule: Match<TScopeName, TRegexStr, TRefName>): rule is Match<TScopeName, TRegexStr, TRefName>
+    export function IsMatchRule(rule: Match): rule is Match
     {
         return (<any>rule).match && !(<any>rule).begin && !(<any>rule).include;
     }
 
-    export interface BeginEnd<TScopeName, TRegexStr, TRefName> extends RuleCommon<TScopeName, TRegexStr, TRefName>
+    export interface BeginEnd extends RuleCommon
     {
         /** a regular expression pattern that starts a block
          *  togather with end, allow matches which span several lines and must both be mutually exclusive with the match key.*/
-        begin: TRegexStr;
+        begin: OnigScanner;
 
         /** a regular expression pattern that ends a block
          *  togather with begin, allow matches which span several lines and must both be mutually exclusive with the match key.*/
-        end: TRegexStr;
+        end: OnigScanner;
 
         /** key allow you to assign attributes to the captures of the begin patterns. */
-        beginCaptures?: { [index in CaptureID]?: Rule<TScopeName, TRegexStr, TRefName> | { name: TScopeName }; };
+        beginCaptures?: Captures;
 
         /** key allow you to assign attributes to the captures of the end patterns. */
-        endCaptures?: { [index in CaptureID]?: Rule<TScopeName, TRegexStr, TRefName> | { name: TScopeName }; };
+        endCaptures?: Captures;
 
         /** a short-hand allow you to assign attributes to the captures of the begin and end patterns with same values. */
-        captures?: { [index in CaptureID]?: Rule<TScopeName, TRegexStr, TRefName> | { name: TScopeName }; };
+        captures?: Captures;
 
         /** this key is similar to the name key but only assigns the name to the text between what is matched by the begin/end patterns. */
-        contentName?: TScopeName;
+        contentName?: ScopeName;
 
         /** array of the actual rules used to parse the document. */
-        patterns?: ReadonlyArray<Rule<TScopeName, TRegexStr, TRefName>>;
+        patterns?: ReadonlyArray<Rule>;
 
         applyEndPatternLast?: boolean;
 
     }
 
-    export function IsBeginEndRule<TScopeName, TRegexStr, TRefName>(rule: BeginEnd<TScopeName, TRegexStr, TRefName>): rule is BeginEnd<TScopeName, TRegexStr, TRefName>
+    export function IsBeginEndRule(rule: BeginEnd): rule is BeginEnd
     {
         return !(<any>rule).match && (<any>rule).begin && (<any>rule).end && !(<any>rule).while && !(<any>rule).include;
     }
 
-    export interface BeginWhile<TScopeName, TRegexStr, TRefName> extends RuleCommon<TScopeName, TRegexStr, TRefName>
+    export interface BeginWhile extends RuleCommon
     {
         /** a regular expression pattern that starts a block
          *  togather with end, allow matches which span several lines and must both be mutually exclusive with the match key.*/
-        begin: TRegexStr;
+        begin: OnigScanner;
 
         /** a regular expression pattern that ends a block
          *  togather with begin, allow matches which span several lines and must both be mutually exclusive with the match key.*/
-        while: TRegexStr;
+        while: OnigScanner;
+
+        /** key allow you to assign attributes to the captures of the begin patterns. */
+        beginCaptures?: Captures;
 
         /** a short-hand allow you to assign attributes to the captures of the begin and end patterns with same values. */
-        captures?: { [index in CaptureID]?: Rule<TScopeName, TRegexStr, TRefName> | { name: TScopeName }; };
+        captures?: Captures;
 
         /** array of the actual rules used to parse the document. */
-        patterns?: Array<Rule<TScopeName, TRegexStr, TRefName>>;
+        patterns?: Array<Rule>;
     }
 
-    export function IsBeginWhileRule<TScopeName, TRegexStr, TRefName>(rule: BeginWhile<TScopeName, TRegexStr, TRefName>): rule is BeginWhile<TScopeName, TRegexStr, TRefName>
+    export function IsBeginWhileRule(rule: BeginWhile): rule is BeginWhile
     {
         return !(<any>rule).match && (<any>rule).begin && (<any>rule).while && !(<any>rule).end && !(<any>rule).include;
     }
 
-    export interface Include<TRefName>
+    export interface Include extends RuleCommon
     {
         /** this allows you to reference a different language, recursively reference the grammar itself or a rule declared in this file’s repository. 
          *  1.To reference another language, use the scope name of that language.
          *  2.To reference the grammar itself, use $self.
          *  3.To reference a rule from the current grammars repository, prefix the name with a pound sign (#).
         */
-        include: TRefName;
+        include: RefName;
     }
 
-    export function IsIncludeRule<TRefName>(rule: Include<TRefName>): rule is Include<TRefName>
-    {
-        return (<any>rule).include !== undefined;
-    }
+    export function IsIncludeRule(rule: Include): rule is Include
+    { return (<any>rule).include !== undefined; }
 
-    export type Repository<TScopeName, TRegexStr, TRefName> = { [key: string]: Rule<TScopeName, TRegexStr, TRefName> };
-    export type Captures<TScopeName, TRegexStr, TRefName> = { [index in CaptureID]?: Rule<TScopeName, TRegexStr, TRefName> | { name: TScopeName }; };
+    //#endregion Rules
 
-    export type RawGrammar = Grammar<string, string, string>;
-    export type RawRule = Rule<string, string, string>;
-    export type RawCaptrues = Captures<string, string, string>;
 
-    export type ValidGrammar = Grammar<TokenName, OnigScanner, RefName> & { displayName?: string; allRules: () => Array<ValidRule>; allRepoRules: () => Map<string, ValidRule>; };
-    export type ValidRule = Rule<TokenName, OnigScanner, RefName> & { key: string; index: number; parent: ValidGrammar | ValidRule };
-    export type ValidCaptrues = Captures<TokenName, OnigScanner, RefName>;
-
-    export function IsValidated(grammar: RawGrammar | ValidGrammar): grammar is ValidGrammar
-    { return grammar.scopeName instanceof ScopeName; }
-
-    export function LoadRaw(src: string): RawGrammar | undefined
+    //#region JSON
+    export function FromJSON(src: string | Text): Grammar | undefined
     {
         try
         {
-            //const src = fs.readFileSync(path);
-            let gd = JSON.parse(src.toString());
-            if (gd.scopeName) { return gd; }
-            else { return; }
-        }
-        catch (e) { return; }
-    }
-    export function ToJSON(grammar: ValidGrammar): string
-    {
-        return JSON.stringify(grammar, function (this: any, k: string, v: any): any
-        {
-            if (this.scopeName !== undefined)
+            let grammar: Grammar = JSON.parse(src.toString(), function (this: any, key: any, value: any)
             {
-
-            }
-        });
-    }
-
-    export function Validate(raw: RawGrammar): ValidGrammar
-    {
-        var asValid = raw as unknown as ValidGrammar;
-
-        var findAllRules = function (this: ValidGrammar, allRules?: Array<ValidRule>): Array<ValidRule>
-        {
-            if (!allRules)
-            {
-                let baseRule = this as unknown as ValidRule;
-                allRules = [baseRule];
-            }
-            if (!this) { return allRules; }
-            let [patterns, repo, ...caps] =
-                [
-                    this.patterns,
-                    this.repository,
-                    (this as any).beginCaptures,
-                    (this as any).endCaptures,
-                    (this as any).captures
-                ];
-            if (patterns)
-            {
-                for (let i = 0, len = patterns.length; i < len; i++)
-                { let r = patterns[i]; allRules.push(r as any); findAllRules.call(r as any, allRules); }
-            }
-            if (repo)
-            {
-                for (const key in repo)
-                { let r = repo[key]; allRules.push(r as any); findAllRules.call(r as any, allRules); }
-            }
-            for (let i = 0, len = caps.length; i < len; i++)
-            {
-                let cap = caps[i];
-                if (cap)
+                if (this === value)//Root grammar itself as value
                 {
-                    for (const id in cap)
-                    { let r = cap[id as CaptureID]; allRules.push(r); findAllRules.call(r, allRules); }
+                    try { this.scopeName = new ScopeName(this.scopeName); }
+                    catch (e) { return "[Invalid Scope name]" + this.scopeName; }
+                    this.displayName = this.name;
+                    this.name = this.scopeName;
+                    return this;
                 }
-            }
-            return allRules;
-        };
-        asValid.allRules = findAllRules;
-
-        var findRepoRules = function (this: ValidGrammar, repoRules?: Map<string, ValidRule>): Map<string, ValidRule>
-        {
-            if (!repoRules)
-            {
-                let baseRule = this as unknown as ValidRule;
-                repoRules = new Map<string, ValidRule>();
-                repoRules.set(this.scopeName.toString(), baseRule);
-            }
-            if (!this) { return repoRules; }
-            let [patterns, repo, ...caps] =
-                [
-                    this.patterns,
-                    this.repository,
-                    (this as any).beginCaptures,
-                    (this as any).endCaptures,
-                    (this as any).captures
-                ];
-            if (patterns)
-            {
-                for (let i = 0, len = patterns.length; i < len; i++)
-                { findRepoRules.call(patterns[i] as any, repoRules); }
-            }
-            if (repo)
-            {
-                for (const key in repo)
-                { let r = repo[key] as any; repoRules.set(r.key, r); findRepoRules.call(r, repoRules); }
-            }
-            for (let i = 0, len = caps.length; i < len; i++)
-            {
-                let cap = caps[i];
-                if (cap)
+                else
                 {
-                    for (const id in cap)
-                    { findRepoRules.call(cap[id as CaptureID], repoRules); }
+                    if (key === "name" && this.scopeName !== undefined) { return value; }//skip root grammar name
+                    else if (key === "name" || key === "contentName")
+                    {
+                        try { return new ScopeName(value); }
+                        catch (e) { return "[Invalid Scope name]" + value.toString(); }
+                    }
+                    else if (key === "match" || key === "begin" || key === "end" || key === "while")
+                    {
+                        try { return new OnigScanner(value); }
+                        catch (e)
+                        {
+                            if (key === "end")
+                            {
+                                try//try end with back refference
+                                {
+                                    let oni = new OnigScanner(this.begin.toString() + value);
+                                    (oni as any).backRefference = value;//so we can fix this later if combining is not valid
+                                }
+                                catch (e) { }
+                            }
+                            return "[Invalid oniguruma regex]" + value.toString();
+                        }
+                    }
+                    else if (key === "include")
+                    {
+                        try { return new RefName(value); }
+                        catch (e) { return "[Invalid invlude]" + value.toString(); }
+                    }
+                    else if (key === "captures" || key === "beginCaptures" || key === "endCaptures")
+                    {
+                        for (const id in value)
+                        {
+                            try { TestCaptureID(id); }
+                            catch (e) { value[id].name = e.toString(); }
+                        }
+                    }
+                    else { return value; }
                 }
-            }
-            return repoRules;
-        };
-        asValid.allRepoRules = findRepoRules;
+            });
 
-        var errors = new Array<string>();
-        var index = 0;
-        let validateRule = function (rule: RawRule)
-        {
-            if (rule)
+            var findRepoRules = function (this: RuleLocater, repoRules?: Map<string, Rule>): Map<string, Rule>
             {
-                (rule as ValidRule).index = index++;
-                let [name, contentName, patterns, repo, match, begin, end, include, ...caps] =
+                if (!repoRules)
+                {
+                    repoRules = new Map<string, Rule>();
+                    repoRules.set((this as Grammar).scopeName.toString(), this as RuleGroup);
+                }
+                let r: AnyRule;
+                //if (!this) { return repoRules; }
+                let [patterns, repo, ...caps] =
                     [
-                        (rule as any).name as string,
-                        (rule as any).contentName as string,
-                        (rule as any).patterns as Array<RawRule>,
-                        (rule as any).repository,
-                        (rule as any).match as string,
-                        (rule as any).begin as string,
-                        (rule as any).end as string,
-                        (rule as any).include as string,
-                        (rule as any).beginCaptures,
-                        (rule as any).endCaptures,
-                        (rule as any).captures
+                        (this as RuleGroup).patterns,
+                        (this as RuleGroup).repository,
+                        (this as BeginEnd).beginCaptures,
+                        (this as BeginEnd).endCaptures,
+                        (this as Match).captures
                     ];
-                if (name) { try { (rule as any).name = new ScopeName(name); } catch (e) { errors.push(`invalid scope name: ${e.toString()}`); } }
-                if (contentName) { try { (rule as any).contentName = new ScopeName(name); } catch (e) { errors.push(`invalid scope name: ${e.toString()}`); } }
-                if (match) { try { (rule as any).match = new OnigScanner(match); } catch (e) { errors.push(`invalid onigruruma regex ${match}`); } }
-                if (begin) { try { (rule as any).begin = new OnigScanner(begin); } catch (e) { errors.push(`invalid onigruruma regex ${begin}`); } }
-                if (end) { try { (rule as any).end = new OnigScanner(end); } catch (e) { errors.push(`invalid onigruruma regex ${end}`); } }
-                if (include) { try { (rule as any).include = new RefName(include); } catch (e) { errors.push(`invalid invlude name ${include}`); } }
                 if (patterns)
                 {
                     for (let i = 0, len = patterns.length; i < len; i++)
                     {
-                        let r = patterns[i];
-                        if (r)
-                        {
-                            validateRule(r);
-                            (r as any).parent = rule;
-                        }
+                        r = patterns[i];
+                        if (r) { findRepoRules.call(r, repoRules); }
+                    }
+                }
+                if (repo)
+                {
+                    for (const key in repo)
+                    {
+                        r = repo[key];
+                        if (r) { repoRules.set(key, r); findRepoRules.call(r, repoRules); }
                     }
                 }
                 for (let i = 0, len = caps.length; i < len; i++)
@@ -420,13 +415,46 @@ export namespace Textmate
                     {
                         for (const id in cap)
                         {
-                            try { TestCaptureID(id); } catch (e) { errors.push(`invalid capture id ${id}`); }
-                            let r = cap[id as CaptureID];
-                            if (r)
-                            {
-                                validateRule(r);
-                                r.parent = rule;
-                            }
+                            r = cap[id as CaptureID]!;
+                            if (r) { findRepoRules.call(r, repoRules); }
+                        }
+                    }
+                }
+                return repoRules;
+            };
+            grammar.ruleMap = findRepoRules;
+
+            let updateRules = function (this: RuleLocater, allRules?: Array<AnyRule>): Array<AnyRule>
+            {
+                let index = 0;
+                if (!allRules)
+                {
+                    allRules = [this as Rule];
+                    this.index = index++;
+                    this.key = (this as Grammar).scopeName.toString();
+                    this.parent = undefined;
+                }
+                if (!this) { return allRules; }
+                let [patterns, repo, ...caps] =
+                    [
+                        (this as RuleGroup).patterns,
+                        (this as RuleCommon).repository,
+                        (this as BeginEnd).beginCaptures,
+                        (this as BeginEnd).endCaptures,
+                        (this as Match).captures
+                    ];
+                if (patterns)
+                {
+                    for (let i = 0, len = patterns.length; i < len; i++)
+                    {
+                        let r = patterns[i];
+                        if (r)
+                        {
+                            r.index = index++;
+                            r.parent = this as Rule;
+                            r.key = undefined;
+                            allRules.push(r);
+                            updateRules.call(r, allRules);
                         }
                     }
                 }
@@ -437,72 +465,99 @@ export namespace Textmate
                         let r = repo[key];
                         if (r)
                         {
-                            validateRule(r);
+                            r.index = index++;
+                            r.parent = this as Rule;
                             r.key = key;
-                            r.parent = rule;
+                            allRules.push(r);
+                            updateRules.call(r, allRules);
                         }
                     }
                 }
-            }
-        };
-
-        let [patterns, repo, scopeName] = [raw.patterns, raw.repository, raw.scopeName];
-        try
-        {
-            asValid.displayName = raw.name;
-            asValid.scopeName = asValid.name = new ScopeName(scopeName);
+                for (let i = 0, len = caps.length; i < len; i++)
+                {
+                    let cap = caps[i];
+                    if (cap)
+                    {
+                        for (const id in cap)
+                        {
+                            let r = cap[id as CaptureID];
+                            if (r)
+                            {
+                                r.index = index++;
+                                r.parent = this as Rule;
+                                r.key = undefined;
+                                allRules.push(r); updateRules.call(r, allRules);
+                            }
+                        }
+                    }
+                }
+                return allRules;
+            };
+            grammar.updateRules = updateRules;
+            grammar.updateRules();
+            return grammar;
         }
-        catch (e) { errors.push(`invalid scope name: ${e.toString()}`); }
-        if (patterns)
+        catch (e)
         {
-            for (let i = 0, len = patterns.length; i < len; i++)
-            {
-                let p = patterns[i];
-                validateRule(p);
-                (p as ValidRule).parent = asValid;
-            }
+            throw e;
+            return;
         }
-        if (repo)
-        {
-            for (const key in repo)
-            { let nr = repo[key]; validateRule(nr); (nr as any).key = key; }
-        }
-        if (errors.length > 0) { throw new Error(errors.join('\n')); }
-        return raw as unknown as ValidGrammar;
     }
 
-    export function BuildScopeLiterialType(tm: RawGrammar | ValidGrammar, typeName?: string): string
+    export function ToJSON(grammar: Grammar): string
+    {
+        return JSON.stringify(grammar, function (this: any, key: any, value: any): any
+        {
+            if (key === "parent" || key === "key" || key === "index" || key === "allRules" || key === "ruleMap")//skip helper properties
+            { return undefined; }
+            else if (this === grammar)
+            {
+                if (key === "scopeName") { return value.toString(); }
+                if (key === "displayName") { return undefined; }
+                if (key === "name") { return this.displayName; }
+            }
+            else if (key === "name" || key === "contentName" || key === "match" || key === "begin" || key === "end" || key === "while" || key === "include")
+            { return value.toString(); }
+            else if (typeof value !== "function") { return value; }
+        });
+    }
+
+    //#endregion JSON
+
+
+    //#region ScopeName utility
+    export function BuildScopeLiterialType(tm: Grammar, typeName?: string): string
     {
         let out = `type ${typeName === undefined ? "TokenNames" : typeName} = `;
-        for (const name of GetScopeNameSet(tm)) { out += `'${name}' | `; }
+        for (const name of GeScopeNameSet(tm)) { out += `'${name}' | `; }
         return out.slice(0, out.lastIndexOf(" | ")) + ";";
     }
 
-    export function GetScopeNameSet(tm: RawGrammar | ValidGrammar): Set<string>
+    export function GeScopeNameSet(tm: Grammar): Set<string>
     {
         var names: Set<string> = new Set<string>();
-        let findNameInRule = function (rule: RawRule | ValidRule)
+        let findNameInRule = function (rule: AnyRule)
         {
             if (rule)
             {
                 let [name, contentName, patterns, repo, ...caps] =
                     [
-                        (rule as any).name,
-                        (rule as any).contentName,
-                        (rule as any).patterns,
-                        (rule as any).repository,
-                        (rule as any).beginCaptures,
-                        (rule as any).endCaptures,
-                        (rule as any).captures
+                        (rule as NameRule).name,
+                        (rule as BeginEnd).contentName,
+                        (rule as RuleGroup).patterns,
+                        (rule as RuleCommon).repository,
+                        (rule as BeginEnd).beginCaptures,
+                        (rule as BeginEnd).endCaptures,
+                        (rule as Match).captures
                     ];
-                if (name) { names.add(name.toString()); }
+                if (name) { name.stackNames.forEach(n => names.add(n)); }
                 if (contentName) { names.add(contentName.toString()); }
                 if (repo) { for (const key in repo) { findNameInRule(repo[key]); } }
                 if (patterns) { for (let i = 0, len = patterns.length; i < len; i++) { findNameInRule(patterns[i]); } }
                 for (let i = 0, len = caps.length; i < len; i++)
                 {
                     let cap = caps[i];
-                    if (cap) { for (const id in cap) { findNameInRule(cap[id as CaptureID]); } }
+                    if (cap) { for (const id in cap) { findNameInRule(cap[id as CaptureID]!); } }
                 }
             }
         };
@@ -512,6 +567,8 @@ export namespace Textmate
         if (repo) { for (const key in repo) { findNameInRule(repo[key] as any); } }
         return names;
     }
+
+    //#endregion ScopeName utility
 
 }
 
@@ -654,14 +711,3 @@ export type TmCommonNames =
 // let a = JSON.parse(b.toString());
 // console.log(a.repository);
 
-let b = { b: 2, c: 3, toString: () => "oB" };
-let a = { a: 1, b, toString: () => "oA" };
-let s = JSON.stringify(a, function (this: any, k: any, v: any)
-{
-    if (this.a === 1)
-    { console.log(`${this}|${k}|${v}`); }
-    //return this;
-    //return { [k]: v };
-    return typeof v === 'function' ? v.name : v;
-});
-console.log(s);
