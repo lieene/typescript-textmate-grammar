@@ -3,7 +3,7 @@
 // Author: Lieene Guo                                                              //
 // MIT License, Copyright (c) 2019 Lieene@ShadeRealm                               //
 // Created Date: Fri Nov 8 2019                                                    //
-// Last Modified: Mon Nov 25 2019                                                  //
+// Last Modified: Tue Nov 26 2019                                                  //
 // Modified By: Lieene Guo                                                         //
 import * as L from "@lieene/ts-utility";
 import { OnigScanner } from "oniguruma-ext";
@@ -133,6 +133,21 @@ export namespace Textmate
         parent?: Grammar | Rule;
     }
 
+    
+    export function Matcher(srouce: string | OnigScanner): Matcher
+    {
+        let m: Matcher = L.Any;
+        [m.regex, m.source] = L.IsString(srouce) ? [new OnigScanner(srouce), srouce] : [srouce, srouce.patterns[0].source];
+        m.toString = function (this: Matcher): string { return this.source; };
+        return m;
+    }
+    
+    export interface Matcher
+    {
+        regex: OnigScanner;
+        source: string;
+    }
+
     export type Repository = { [key: string]: Rule };
 
     export type Captures = { [index in CaptureID]?: Rule | NameRule };
@@ -182,12 +197,15 @@ export namespace Textmate
         displayName?: string;
 
         updateRules: () => Array<AnyRule>;
+        matchers: () => Array<AnyRule>;
         ruleMap: () => Map<string, Rule>;
     }
 
     //#region Rules
+
     export type Rule = RuleGroup | Match | BeginEnd | BeginWhile | Include;
     export type AnyRule = Rule | NameRule;
+
 
     export interface RuleCommon extends RuleLocater
     {
@@ -375,7 +393,7 @@ export namespace Textmate
                 }
             });
 
-            var findRepoRules = function (this: RuleLocater, repoRules?: Map<string, Rule>): Map<string, Rule>
+            grammar.ruleMap = function ruleMap(this: RuleLocater, repoRules?: Map<string, Rule>): Map<string, Rule>
             {
                 if (!repoRules)
                 {
@@ -397,7 +415,7 @@ export namespace Textmate
                     for (let i = 0, len = patterns.length; i < len; i++)
                     {
                         r = patterns[i];
-                        if (r) { findRepoRules.call(r, repoRules); }
+                        if (r) { ruleMap.call(r, repoRules); }
                     }
                 }
                 if (repo)
@@ -405,7 +423,7 @@ export namespace Textmate
                     for (const key in repo)
                     {
                         r = repo[key];
-                        if (r) { repoRules.set(key, r); findRepoRules.call(r, repoRules); }
+                        if (r) { repoRules.set(key, r); ruleMap.call(r, repoRules); }
                     }
                 }
                 for (let i = 0, len = caps.length; i < len; i++)
@@ -416,15 +434,14 @@ export namespace Textmate
                         for (const id in cap)
                         {
                             r = cap[id as CaptureID]!;
-                            if (r) { findRepoRules.call(r, repoRules); }
+                            if (r) { ruleMap.call(r, repoRules); }
                         }
                     }
                 }
                 return repoRules;
             };
-            grammar.ruleMap = findRepoRules;
 
-            let updateRules = function (this: RuleLocater, allRules?: Array<AnyRule>): Array<AnyRule>
+            grammar.updateRules = function updateRules(this: RuleLocater, allRules?: Array<AnyRule>): Array<AnyRule>
             {
                 let index = 0;
                 if (!allRules)
@@ -493,7 +510,6 @@ export namespace Textmate
                 }
                 return allRules;
             };
-            grammar.updateRules = updateRules;
             grammar.updateRules();
             return grammar;
         }

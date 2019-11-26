@@ -8,6 +8,7 @@ test("grammar test", () =>
     let grammar = Textmate.FromJSON(grammarSrc)!;
     let tokenNameType = Textmate.BuildScopeLiterialType(grammar);
     console.log(tokenNameType);
+    console.log(grammar);
 });
 
 // test("test JSON", () =>

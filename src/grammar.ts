@@ -1,9 +1,10 @@
+
 // File: grammar.ts                                                                //
 // Project: lieene.tm-grammar                                                      //
 // Author: Lieene Guo                                                              //
 // MIT License, Copyright (c) 2019 Lieene@ShadeRealm                               //
 // Created Date: Sat Nov 23 2019                                                   //
-// Last Modified: Mon Nov 25 2019                                                  //
+// Last Modified: Tue Nov 26 2019                                                  //
 // Modified By: Lieene Guo                                                         //
 
 
@@ -17,15 +18,19 @@ import { promisify } from "util";
 export class Grammar
 {
     static IsGrammar<T>(obj: T | Grammar): obj is Grammar
-    { return (obj as Grammar).tokenizeSource !== undefined; }
+    { return (obj as Grammar).tokenizeSource !== undefined; } 
 
-    constructor(src: tm.RawGrammar | tm.ValidGrammar)
+    constructor(src: tm.Grammar | string)
     {
-        if (!tm.IsValidated(src))
-        { src = tm.Validate(src); }
+        if (L.IsString(src))
+        {
+            src = tm.FromJSON(src)!;
+            if (src === undefined) { throw new Error("Invalid JSON grammar"); }
+        }
+
         let hasSource = this.abstract = src !== undefined;
         this.scopeName = hasSource ? src.scopeName : L.Uny;
-        this.displayName = this.scopeName.language;
+        this.displayName = src.displayName!;
         this.repository = new Map<string, Grammar.Rule>();
         this.patterns = [];
         this.rules = [];
@@ -66,7 +71,6 @@ export class Grammar
     }
 
     public findRule(name: string) { return this.repository.get(name); }
-
     tokenizeSource(source: string | Text, callback: (e: Error, tree: SyntaxTree) => void): void
     {
         var stack: Grammar.MatchStack = [];
@@ -158,7 +162,7 @@ namespace RepoBuilder
         rf.findGrammar = function (this: Tree.Nomalize<GrammarRepo>, name: Grammar.TokenName | string): Grammar | undefined
         {
             if (L.IsString(name)) { name = new Grammar.TokenName(name); }
-            let parts = name.stackParts;
+            let parts = name.parts;
             let node = this.root;
             for (let i = 0, len = parts.length; i < len; i++)
             {
@@ -175,7 +179,7 @@ namespace RepoBuilder
             if (grammar === undefined) { throw new Error("grammar is null"); }
             if (name === undefined) { name = grammar.scopeName; }
             else if (L.IsString(name)) { name = new Grammar.TokenName(name); }
-            let parts = name.stackParts;
+            let parts = name.parts;
             let node = this.root;
             for (let i = 0, len = parts.length, last = len - 1; i < len; i++)
             {
