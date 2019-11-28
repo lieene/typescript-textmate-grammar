@@ -4,21 +4,21 @@
 // Author: Lieene Guo                                                              //
 // MIT License, Copyright (c) 2019 Lieene@ShadeRealm                               //
 // Created Date: Sat Nov 23 2019                                                   //
-// Last Modified: Tue Nov 26 2019                                                  //
+// Last Modified: Thu Nov 28 2019                                                  //
 // Modified By: Lieene Guo                                                         //
 
 
 import * as L from "@lieene/ts-utility";
 import { Text } from "text-editing";
 import { Tree, Name } from "poly-tree";
-import { OnigScanner } from "oniguruma-ext";
+import { OnigScanner as scaner, OniStr as ostring, OniRegexSource as oregex } from "oniguruma-ext";
 import { Textmate as tm } from "./tm-grammar";
 import { promisify } from "util";
 
 export class Grammar
 {
     static IsGrammar<T>(obj: T | Grammar): obj is Grammar
-    { return (obj as Grammar).tokenizeSource !== undefined; } 
+    { return (obj as Grammar).tokenizeSource !== undefined; }
 
     constructor(src: tm.Grammar | string)
     {
@@ -37,7 +37,8 @@ export class Grammar
         if (hasSource)
         {
             //TODO: parse TmGrammar;
-            LoadedGrammars.set(this.scopeName, this);
+            
+            LoadedGrammars.set(this.scopeName.toString(), this);
         }
     }
 
@@ -57,8 +58,8 @@ export class Grammar
     readonly abstract: boolean;
 
     readonly displayName: string;
-    readonly scopeName: Grammar.TokenName;
-    get languageName(): string { return this.scopeName.language; }
+    readonly scopeName: tm.ScopeName;
+    get languageName(): string { return this.scopeName.parts.last!.name; }
 
     readonly repository: ReadonlyMap<string, Grammar.Rule>;
     readonly patterns: ReadonlyArray<Grammar.Rule>;
@@ -86,7 +87,7 @@ export class Grammar
 }
 export namespace Grammar
 {
-    export import TokenName = tm.ScopeName;
+    export import TokenName = tm.TokenName;
     export function IsTokenName(obj: any): obj is TokenName
     { return Object.getPrototypeOf(obj) === TokenName.prototype; }
 
@@ -129,52 +130,56 @@ export namespace Grammar
     }
 }
 
+//#region Repo off all grammar
+
 /** Set of grammar to parse different languages */
-export type GrammarRepo = Tree.MorphTreeS<Grammar & { readonly gScope: string }, RepoBuilder.RepoFunc>;
+export type GrammarRepo = Tree.MorphTreeS<Grammar & { readonly gScope: tm.StandardName }, RepoBuilder.RepoFunc>;
 export type GrammarNode = Tree.NodeType<GrammarRepo>;
 
-export var LoadedGrammars: Map<tm.ScopeName, Grammar>;
+export var LoadedGrammars: Map<string, Grammar>;
+
+/** root of all Grammar repo */
+let rootGrammar = { abstract: true, gScope: new tm.StandardName("global") } as unknown as Grammar;
 
 /** build a new GrammatSet */
 export function GrammarRepo(...grammars: Grammar[]): GrammarRepo
 {
-    let gs = Tree<Grammar & { readonly gScope: string }, RepoBuilder.RepoFunc>(RepoBuilder.RepoFunc());
+    let gs = Tree<Grammar & { readonly gScope: tm.StandardName }, RepoBuilder.RepoFunc>(RepoBuilder.RepoFunc());
     gs.root.poly(rootGrammar);
     grammars.forEach(g => gs.setGrammar(g));
     return gs as unknown as Tree.Simplify<typeof gs>;
 }
-let rootGrammar = { abstract: true, gScope: "global" } as unknown as Grammar;
 
 
 namespace RepoBuilder
 {
-    function abstractGrammar(gScope: string): any
+    function abstractGrammar(gScope: string | tm.StandardName): any
     {
         let g: any = new Grammar(L.Uny);
         g.abstract = true;
-        g.gScope = gScope;
+        g.gScope = gScope instanceof tm.StandardName && gScope || new tm.StandardName(gScope);
         return g;
     }
     export function RepoFunc(): RepoFunc
     {
         let rf: RepoFunc = L.Any;
 
-        rf.findGrammar = function (this: Tree.Nomalize<GrammarRepo>, name: Grammar.TokenName | string): Grammar | undefined
+        rf.findGrammar = function (this: Tree.Nomalize<GrammarRepo>, name: tm.ScopeName | string): Grammar | undefined
         {
-            if (L.IsString(name)) { name = new Grammar.TokenName(name); }
+            if (L.IsString(name)) { name = new tm.ScopeName(name); }
             let parts = name.parts;
-            let node = this.root;
+            let node = this.root;//root is always "global" and abstract
             for (let i = 0, len = parts.length; i < len; i++)
             {
                 let gScope = parts[i];
-                let next = node.findChild(n => n.gScope === gScope, false).first!;
+                let next = node.findChild(n => n.gScope.name === gScope.name, false).first!;
                 if (next === undefined) { return undefined; }
                 node = next;
             }
-            return node as unknown as Grammar;
+            return node as Grammar;
         };
 
-        rf.setGrammar = function (this: Tree.Edit<GrammarRepo>, grammar: Grammar, name?: Grammar.TokenName | string): void
+        rf.setGrammar = function (this: Tree.Edit<GrammarRepo>, grammar: Grammar, name?: tm.ScopeName | string): void
         {
             if (grammar === undefined) { throw new Error("grammar is null"); }
             if (name === undefined) { name = grammar.scopeName; }
@@ -184,7 +189,7 @@ namespace RepoBuilder
             for (let i = 0, len = parts.length, last = len - 1; i < len; i++)
             {
                 let gScope = parts[i];
-                let next = node.findChild(n => n.gScope === gScope, false).first!;
+                let next = node.findChild(n => n.gScope.name === gScope.name, false).first!;
                 if (i !== last)
                 {
                     if (next === undefined) { node.push(abstractGrammar(gScope)); }
@@ -200,7 +205,7 @@ namespace RepoBuilder
             }
         };
 
-        rf.removeGrammar = function (this: Tree.Edit<GrammarRepo>, name: Grammar.TokenName | string): void
+        rf.removeGrammar = function (this: Tree.Edit<GrammarRepo>, name: tm.ScopeName | string): void
         {
             let g = this.findGrammar(name) as unknown as Tree.Edit<GrammarNode>;
             if (g !== undefined)
@@ -218,12 +223,13 @@ namespace RepoBuilder
     }
     export interface RepoFunc
     {
-        findGrammar(name: Grammar.TokenName | string): Grammar | undefined;
-        setGrammar(grammar: Grammar, name?: Grammar.TokenName | string): void;
-        removeGrammar(name: Grammar.TokenName | string): void;
+        findGrammar(name: tm.ScopeName | string): Grammar | undefined;
+        setGrammar(grammar: Grammar, name?: tm.ScopeName | string): void;
+        removeGrammar(name: tm.ScopeName | string): void;
         linkGrammars(): void;
     }
 }
+//#endregion Repo off all grammar
 
 interface TokenExt 
 {

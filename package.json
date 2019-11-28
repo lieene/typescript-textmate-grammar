@@ -50,7 +50,7 @@
     "out/**/*"
   ],
   "dependencies": {
-    "oniguruma-ext": "^1.1.20",
-    "text-editing": "^1.0.9"
+    "oniguruma-ext": "^1.1.27",
+    "text-editing": "^1.0.10"
   }
 }
