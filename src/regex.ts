@@ -3,7 +3,7 @@
 // Author: Lieene Guo                                                              //
 // MIT License, Copyright (c) 2019 Lieene@ShadeRealm                               //
 // Created Date: Thu Nov 28 2019                                                   //
-// Last Modified: Thu Nov 28 2019                                                  //
+// Last Modified: Fri Nov 29 2019                                                  //
 // Modified By: Lieene Guo                                                         //
 import * as L from "@lieene/ts-utility";
 import { OnigScanner as scaner, OniStr as ostring, OniRegexSource as oregex } from "oniguruma-ext";
@@ -26,7 +26,11 @@ export class OMatcher extends oregex
 
   anchorA?: Array<{ start: number }>;// /A matches begining of the source file
   anchorG?: Array<{ start: number }>;// /G only match position in this line, and while mey break it
-  anchorz?: Array<{ start: number }>;// /Z matched line end  /z shall never be matched in vscode(so it force the rule to last to the end of the souce file)
+  anchorz?: Array<{ start: number }>;// /z shall never be matched in vscode
+  //so as end matcher /z force the rule to last to the end of the souce file
+
+  // /Z matched end of current line and it can be used normally
+  
   backReferences?: Array<{ start: number, end: number, backIndex: number }>;
 }
 
