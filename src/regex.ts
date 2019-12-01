@@ -3,10 +3,10 @@
 // Author: Lieene Guo                                                              //
 // MIT License, Copyright (c) 2019 Lieene@ShadeRealm                               //
 // Created Date: Thu Nov 28 2019                                                   //
-// Last Modified: Fri Nov 29 2019                                                  //
+// Last Modified: Sun Dec 01 2019                                                  //
 // Modified By: Lieene Guo                                                         //
 import * as L from "@lieene/ts-utility";
-import { OnigScanner as scaner, OniStr as ostring, OniRegexSource as oregex } from "oniguruma-ext";
+import { OnigScanner as scaner, OniStr as ostring, OniRegexSource as oRegex } from "oniguruma-ext";
 
 const HAS_BACK_REFERENCES = /\\(\d+)/;
 const BACK_REFERENCING_END = /\\(\d+)/g;
@@ -32,6 +32,13 @@ export class OMatcher extends oregex
   // /Z matched end of current line and it can be used normally
   
   backReferences?: Array<{ start: number, end: number, backIndex: number }>;
+}
+export interface AnchorCache
+{
+  A0_G0:oRegex;
+  A0_G1:oRegex;
+  A1_G0:oRegex;
+  A1_G1:oRegex;
 }
 
 
